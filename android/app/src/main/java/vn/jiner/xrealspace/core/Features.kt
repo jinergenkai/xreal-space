@@ -34,10 +34,12 @@ object SlotGrid {
 
     /** Finds "ô 3" / "o ba" / "slot three" / "số 5" in folded text. */
     fun parseSlot(folded: String): Int? {
-        val m = Regex("""(?:^|\s)(?:o|slot|so|cell|man)\s+(?:so\s+)?([1-9]|[a-z]+)\b""").find(folded) ?: return null
-        val w = m.groupValues[1]
-        w.toIntOrNull()?.let { return it }
-        return NUMBER_WORDS.firstOrNull { it.first == w }?.second
+        for (m in Regex("""(?:^|\s)(?:o|slot|so|cell|man)\s+(?:so\s+)?([1-9]|[a-z]+)\b""").findAll(folded)) {
+            val w = m.groupValues[1]
+            w.toIntOrNull()?.let { return it }
+            NUMBER_WORDS.firstOrNull { it.first == w }?.second?.let { return it }
+        }
+        return null
     }
 }
 
@@ -167,6 +169,11 @@ Các hàm:
 - follow_mode {mode:"world"|"cinema"|"travel"}   cố định trong phòng / rạp phim trôi theo / di chuyển (xe, máy bay)
 - dark_web {on:true|false|null}   làm tối trang web cho đỡ chói
 - summarize {}   tóm tắt trang đang nhìn
+- open_app {name}   mở app Android đã cài (Zalo, Grab, Netflix…); app hiện trên kính qua màn hình điện thoại
+- mirror {slot:1-9|null, off:true|false}   đưa màn hình điện thoại vào ô / tắt
+- captions {mode:"off"|"vi"|"en"|"en_vi"|"vi_en"}   phụ đề trực tiếp / phiên dịch
+- prompter {on:true|false|null}   teleprompter chạy theo giọng đọc
+- back {} / home {}   quay lại / về màn hình chính của điện thoại
 - answer {text}   câu hỏi thường: trả lời ngắn (tối đa 3 câu) để hiện lên kính
 Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì dùng answer để hỏi lại.
 """.trimIndent()
@@ -219,6 +226,13 @@ Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì d�
                 "follow_mode" -> when (m["mode"]) { "cinema" -> FollowMode.CINEMA; "travel" -> FollowMode.TRAVEL; else -> FollowMode.WORLD }.let { VoiceCommands.Cmd.Follow(it) }
                 "dark_web" -> VoiceCommands.Cmd.DarkWeb(bool(m["on"]))
                 "summarize" -> VoiceCommands.Cmd.Summarize
+                "open_app" -> (m["name"] as? String)?.let { VoiceCommands.Cmd.LaunchApp(it) }
+                "mirror" -> if (m["off"] == true) VoiceCommands.Cmd.MirrorOff else VoiceCommands.Cmd.Mirror(slot(m["slot"]))
+                "captions" -> VoiceCommands.Cmd.Captions(when (m["mode"]) {
+                    "vi" -> CaptionMode.VI; "en" -> CaptionMode.EN; "en_vi" -> CaptionMode.EN_TO_VI; "vi_en" -> CaptionMode.VI_TO_EN; else -> CaptionMode.OFF })
+                "prompter" -> VoiceCommands.Cmd.Prompter(bool(m["on"]))
+                "back" -> VoiceCommands.Cmd.Back
+                "home" -> VoiceCommands.Cmd.Home
                 "answer" -> (m["text"] as? String)?.let { VoiceCommands.Cmd.Answer(it) }
                 else -> null
             }
@@ -281,13 +295,18 @@ object JevProtocol {
         "follow_mode" to "change how screens follow: fixed in the room, cinema drift, or travel / vehicle mode",
         "dark_web" to "dark mode / reduce glare on web pages, or turn it off",
         "summarize" to "summarize the page the user is looking at",
+        "open_app" to "open an installed phone app such as Zalo, Grab, Netflix, Shopee",
+        "mirror" to "show or stop showing the phone screen on the glasses",
+        "captions" to "live captions, subtitles, or translate what people are saying",
+        "prompter" to "teleprompter: show my script and scroll it as I read, or stop it",
+        "back" to "go back / previous screen on the phone",
         "question" to "a general question or chat for the assistant, not a command",
         "none" to "noise, unclear, or not addressed to the app",
     )
 
     val SITES = linkedMapOf(
         "youtube" to "https://m.youtube.com", "gmail" to "https://mail.google.com", "google_maps" to "https://www.google.com/maps",
-        "facebook" to "https://m.facebook.com", "tiktok" to "https://www.tiktok.com", "zalo" to "https://chat.zalo.me",
+        "facebook" to "https://m.facebook.com", "tiktok" to "https://www.tiktok.com",
         "github" to "https://github.com", "claude" to "https://claude.ai", "chatgpt" to "https://chatgpt.com",
         "calendar" to "https://calendar.google.com", "docs" to "https://docs.google.com", "news" to "https://vnexpress.net",
         "spotify" to "https://open.spotify.com", "google" to "https://www.google.com",
@@ -348,6 +367,11 @@ object JevProtocol {
             "follow_mode" -> VoiceCommands.Cmd.Follow(when (d.mode) { "cinema" -> FollowMode.CINEMA; "travel" -> FollowMode.TRAVEL; else -> FollowMode.WORLD })
             "dark_web" -> VoiceCommands.Cmd.DarkWeb(on)
             "summarize" -> VoiceCommands.Cmd.Summarize
+            "open_app" -> VoiceCommands.Cmd.LaunchApp(VoiceCommands.appName(t))
+            "mirror" -> if (on == false) VoiceCommands.Cmd.MirrorOff else VoiceCommands.Cmd.Mirror(slot)
+            "captions" -> (VoiceCommands.parse(transcript) as? VoiceCommands.Cmd.Captions) ?: VoiceCommands.Cmd.Captions(if (on == false) CaptionMode.OFF else CaptionMode.VI)
+            "prompter" -> VoiceCommands.Cmd.Prompter(on)
+            "back" -> VoiceCommands.Cmd.Back
             "question" -> VoiceCommands.Cmd.Ask(transcript)
             else -> VoiceCommands.Cmd.Unknown(transcript)
         }

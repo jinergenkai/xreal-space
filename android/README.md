@@ -90,7 +90,7 @@ Cần JDK 17 + Android SDK (API 35). Chọn một cách:
 
 Cài: `adb install -r app-debug.apk` (hoặc copy APK sang máy rồi mở).
 
-Test lõi (giao thức, tracker, wizard, bản đồ, lưới 9 ô, luật/Jev/LLM parsing, từ đánh thức, chế độ đi theo): `gradlew test` — 19 test,
+Test lõi (giao thức, tracker, wizard, bản đồ, lưới 9 ô, luật/Jev/LLM parsing, từ đánh thức, chế độ đi theo): `gradlew test` — 22 test,
 có 1 test chạy trên 4 giây dữ liệu Air 2 thật.
 
 ## Kịch bản test trên Beam Pro

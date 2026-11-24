@@ -10,7 +10,14 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.graphics.SurfaceTexture
 import android.os.Build
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.view.Surface
+import android.view.TextureView
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -60,8 +67,15 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     inner class Panel(val index: Int) {
         val frame = FrameLayout(context)
         val web = WebView(context)
+        /** a panel showing the phone screen (MediaProjection) instead of a web page */
+        val isMirror = SpaceState.config.screens.getOrNull(index)?.url == Assistant.MIRROR_URL
+        var mirrorView: TextureView? = null
         val border = GradientDrawable().apply { setColor(Color.BLACK); setStroke(BORDER, Colors.BORDER); cornerRadius = 10f }
-        var heightPx = BASE_W * 9 / 16
+        /** content size in px (web: 1280x720; mirror: phone aspect, portrait) */
+        val widthPx = if (isMirror) 720 else BASE_W
+        var heightPx = if (isMirror) (720f * MirrorController.phoneH / MirrorController.phoneW).toInt() else BASE_W * 9 / 16
+        /** the view that receives input: the WebView or the mirror */
+        val content: View get() = mirrorView ?: web
         var focused = false
             set(v) { if (v != field) { field = v; border.setStroke(BORDER, if (v) Colors.BORDER_FOCUS else Colors.BORDER) } }
         /** last time (ms) the panel was on screen, for pausing panels you are not looking at */
@@ -97,9 +111,24 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 override fun onHideCustomView() { exitFullscreen() }
             }
             web.setBackgroundColor(Color.BLACK)
-            frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            if (isMirror) {
+                val tv = TextureView(context)
+                var surface: Surface? = null
+                tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                        surface = Surface(st).also { MirrorController.attach(it, w, h, 320) }
+                    }
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) { surface?.let { MirrorController.attach(it, w, h, 320) } }
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean { surface?.let { MirrorController.detach(it); it.release() }; surface = null; return true }
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                }
+                mirrorView = tv
+                frame.addView(tv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            } else {
+                frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                SpaceState.config.screens.getOrNull(index)?.let { web.loadUrl(it.url) }
+            }
             frame.pivotX = 0f; frame.pivotY = 0f
-            SpaceState.config.screens.getOrNull(index)?.let { web.loadUrl(it.url) }
         }
     }
 
@@ -170,6 +199,18 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 18f }
         visibility = GONE
     }
+    private val captionView = TextView(ctx).apply {
+        setTextColor(Colors.WHITE); textSize = 22f; setPadding(26, 14, 26, 14); gravity = Gravity.CENTER; setLineSpacing(4f, 1.0f)
+        background = GradientDrawable().apply { setColor(0xF2000000.toInt()); cornerRadius = 16f }
+        visibility = GONE
+    }
+    private val prompterView = TextView(ctx).apply {
+        textSize = 30f; setPadding(36, 24, 36, 24); setLineSpacing(10f, 1.0f)
+        background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, 0xFF2F5A7A.toInt()); cornerRadius = 20f }
+        visibility = GONE
+    }
+    private var captionsSeen = -1
+    private var prompterSeen = -1
     private val voice = TextView(ctx).apply {
         setTextColor(Colors.CYAN); textSize = 18f; setPadding(22, 10, 22, 10); gravity = Gravity.CENTER
         background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 30f }
@@ -202,6 +243,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         addView(wizardText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         slotLabels.forEach { addView(it, LayoutParams(220, 124)); it.pivotX = 0f; it.pivotY = 0f }
         addView(card, LayoutParams(820, LayoutParams.WRAP_CONTENT))
+        addView(captionView, LayoutParams(1100, LayoutParams.WRAP_CONTENT))
+        addView(prompterView, LayoutParams(1200, LayoutParams.WRAP_CONTENT))
         addView(voice, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(cinema, LayoutParams(100, 100))
         addView(biasHint, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
@@ -215,15 +258,15 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         panels.clear()
         SpaceState.config.screens.indices.forEach { i ->
             val p = Panel(i)
-            addView(p.frame, i, LayoutParams(BASE_W + 2 * BORDER, p.heightPx + 2 * BORDER))
+            addView(p.frame, i, LayoutParams(p.widthPx + 2 * BORDER, p.heightPx + 2 * BORDER))
             panels.add(p)
         }
         builtVersion = SpaceState.panelsVersion
         SpaceState.pendingLoads.clear()
     }
 
-    fun start() { if (!running) { running = true; lastFrameNs = 0; Choreographer.getInstance().postFrameCallback(this) } }
-    fun stop() { running = false; Choreographer.getInstance().removeFrameCallback(this) }
+    fun start() { if (!running) { running = true; lastFrameNs = 0; SpaceHost.space = this; Choreographer.getInstance().postFrameCallback(this) } }
+    fun stop() { running = false; if (SpaceHost.space === this) SpaceHost.space = null; Choreographer.getInstance().removeFrameCallback(this) }
 
     fun destroy() { stop(); exitFullscreen(); panels.forEach { it.web.destroy() }; panels.clear() }
 
@@ -293,7 +336,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             if (st.walkMode || wz != null || fullView != null) { hide(p.frame); pauseIfStale(p, nowMs); return@forEachIndexed }
             val P = Mat3.mul(F, Mat3.mul(Mat3.rotY(spec.yaw), Mat3.rotX(spec.pitch)))
             val pl = Projection.place(C, P, cfg.distanceM, spec.widthM, w, h, cfg.fovVDeg)
-            layoutOn(p.frame, pl, BASE_W + 2.0 * BORDER, p.heightPx + 2.0 * BORDER)
+            layoutOn(p.frame, pl, p.widthPx + 2.0 * BORDER, p.heightPx + 2.0 * BORDER)
             if (pl.visible) { p.lastSeen = nowMs; if (p.paused) { p.web.onResume(); p.paused = false } } else pauseIfStale(p, nowMs)
             if (pl.visible) {
                 val d = hypot(pl.cx - w / 2.0, pl.cy - h / 2.0)
@@ -368,6 +411,46 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             if (card.text.toString() != txt) card.text = txt
             card.x = w / 2f - 410f; card.y = h * 0.42f
         } else if (card.visibility != GONE) card.visibility = GONE
+        // live captions (head-locked, bottom)
+        if (st.captionMode != vn.jiner.xrealspace.core.CaptionMode.OFF) {
+            if (captionView.visibility != VISIBLE) captionView.visibility = VISIBLE
+            if (captionsSeen != Assistant.captionsVersion) {
+                captionsSeen = Assistant.captionsVersion
+                val sb = SpannableStringBuilder()
+                val lines = Assistant.captions.visible()
+                if (lines.isEmpty()) sb.append("… đang nghe")
+                lines.forEachIndexed { k, l ->
+                    if (k > 0) sb.append('\n')
+                    val tr = l.translation
+                    if (tr != null) { val a = sb.length; sb.append(tr); sb.setSpan(ForegroundColorSpan(Colors.WHITE), a, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        sb.append('\n'); val b = sb.length; sb.append(l.text); sb.setSpan(ForegroundColorSpan(Colors.GREY), b, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                    else sb.append(l.text)
+                }
+                captionView.text = sb
+            }
+            captionView.x = w / 2f - 550f; captionView.y = h - captionView.height - 110f
+        } else if (captionView.visibility != GONE) captionView.visibility = GONE
+        // teleprompter (head-locked, upper middle): read words dim, next word highlighted
+        val pr = Assistant.prompter
+        if (pr != null) {
+            if (prompterView.visibility != VISIBLE) prompterView.visibility = VISIBLE
+            if (prompterSeen != Assistant.prompterVersion) {
+                prompterSeen = Assistant.prompterVersion
+                val sb = SpannableStringBuilder()
+                val past = pr.words.subList(maxOf(0, pr.pos - 8), pr.pos).joinToString(" ")
+                if (past.isNotEmpty()) { sb.append(past).append(' '); sb.setSpan(ForegroundColorSpan(0xFF5C6670.toInt()), 0, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                val next = pr.words.subList(pr.pos, minOf(pr.words.size, pr.pos + 45))
+                if (next.isEmpty()) { val a = sb.length; sb.append("— hết kịch bản —"); sb.setSpan(ForegroundColorSpan(Colors.GREEN), a, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                next.forEachIndexed { k, word ->
+                    val a = sb.length; sb.append(word).append(' ')
+                    sb.setSpan(ForegroundColorSpan(if (k == 0) Colors.BORDER_FOCUS else Colors.WHITE), a, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    if (k == 0) sb.setSpan(StyleSpan(android.graphics.Typeface.BOLD), a, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                prompterView.text = sb
+            }
+            prompterView.x = w / 2f - 600f; prompterView.y = h * 0.16f
+        } else if (prompterView.visibility != GONE) prompterView.visibility = GONE
+
         // voice indicator
         val vtext = when (st.voiceState) {
             "listening" -> "🎤 Đang nghe… " + st.voiceHeard
@@ -394,6 +477,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     /** Pause a WebView you have not looked at for a while (saves battery/heat); never the fullscreen one. */
     private fun pauseIfStale(p: Panel, nowMs: Long) {
         if (!SpaceState.pauseOffscreen || p.paused || p === fullOwner) return
+        if (p.isMirror) return
         if (nowMs - p.lastSeen > 8000) { p.web.onPause(); p.paused = true }
     }
 
@@ -431,7 +515,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         val pt = floatArrayOf(width / 2f - f.left, height / 2f - f.top)
         inv.mapPoints(pt)
         pt[0] -= BORDER; pt[1] -= BORDER
-        if (pt[0] < 0 || pt[1] < 0 || pt[0] > p.web.width || pt[1] > p.web.height) return null
+        if (pt[0] < 0 || pt[1] < 0 || pt[0] > p.content.width || pt[1] > p.content.height) return null
         return pt
     }
 
@@ -447,11 +531,20 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 val pt = gazeLocal(p) ?: return
                 touchTarget = p; touchX = pt[0]; touchY = pt[1]
                 touchDownTime = SystemClock.uptimeMillis()
-                send(p, MotionEvent.ACTION_DOWN, touchX, touchY)
+                if (!p.isMirror) send(p, MotionEvent.ACTION_DOWN, touchX, touchY)
             }
-            MotionEvent.ACTION_MOVE -> fullTouch?.let { sendTo(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) } ?: touchTarget?.let { send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
+            MotionEvent.ACTION_MOVE -> fullTouch?.let { sendTo(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) } ?: touchTarget?.let { if (!it.isMirror) send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> fullTouch?.let { sendTo(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain); fullTouch = null } ?: touchTarget?.let {
-                send(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain); touchTarget = null
+                if (it.isMirror) {
+                    // mirrored phone app: replay the finger as one Accessibility gesture
+                    val c = it.content; val cs = ControlService.instance
+                    if (cs == null) SpaceState.notify("Điều khiển app", "Bật Trợ năng cho XREAL Space để bấm vào màn hình điện thoại", Colors.AMBER, 3.0)
+                    else if (action == MotionEvent.ACTION_UP) {
+                        if (kotlin.math.hypot(dxTotal, dyTotal) < 20) cs.tapMirror(touchX, touchY, c.width.toFloat(), c.height.toFloat())
+                        else cs.swipeMirror(touchX, touchY, touchX + dxTotal * gain * 0.6f, touchY + dyTotal * gain * 0.6f, c.width.toFloat(), c.height.toFloat())
+                    }
+                } else send(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain)
+                touchTarget = null
             }
         }
     }
@@ -476,6 +569,10 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         }
         val p = panels.getOrNull(SpaceState.focusedPanel) ?: return false
         val pt = gazeLocal(p) ?: return false
+        if (p.isMirror) {
+            val cs = ControlService.instance ?: run { SpaceState.notify("Điều khiển app", "Bật Trợ năng cho XREAL Space", Colors.AMBER, 3.0); return false }
+            return cs.tapMirror(pt[0], pt[1], p.content.width.toFloat(), p.content.height.toFloat())
+        }
         touchDownTime = SystemClock.uptimeMillis()
         send(p, MotionEvent.ACTION_DOWN, pt[0], pt[1])
         send(p, MotionEvent.ACTION_UP, pt[0], pt[1])
@@ -496,7 +593,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             e.dispatchEvent(new Event('input',{bubbles:true}));})($js)""".trimIndent(), null)
     }
 
-    fun focusedWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)?.web ?: panels.firstOrNull()?.web
+    fun focusedWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)?.takeIf { !it.isMirror }?.web
+        ?: panels.firstOrNull { !it.isMirror }?.web
 
     fun webAt(i: Int): WebView? = panels.getOrNull(i)?.web
 

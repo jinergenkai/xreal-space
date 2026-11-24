@@ -264,6 +264,15 @@ object VoiceCommands {
         object ShowGrid : Cmd()
         data class Workspace(val name: String) : Cmd()
         data class Follow(val mode: FollowMode) : Cmd()
+        /** open an installed Android app by name (shown on the glasses through the phone mirror) */
+        data class LaunchApp(val name: String) : Cmd()
+        /** phone screen mirror into a grid slot (null = keep / default 4), off = stop */
+        data class Mirror(val slot: Int?) : Cmd()
+        object MirrorOff : Cmd()
+        data class Captions(val mode: CaptionMode) : Cmd()
+        data class Prompter(val on: Boolean?) : Cmd()
+        object Back : Cmd()
+        object Home : Cmd()
         data class DarkWeb(val on: Boolean?) : Cmd()
         data class SaveWorkspace(val name: String) : Cmd()
         /** put [url] into grid slot 1..9 */
@@ -286,7 +295,6 @@ object VoiceCommands {
         "gmail" to "https://mail.google.com",
         "facebook" to "https://m.facebook.com",
         "tiktok" to "https://www.tiktok.com",
-        "zalo" to "https://chat.zalo.me",
         "github" to "https://github.com",
         "chatgpt" to "https://chatgpt.com",
         "claude" to "https://claude.ai",
@@ -323,6 +331,11 @@ object VoiceCommands {
         return t.replace(Regex("\\s+"), " ").trim()
     }
 
+    /** "mo ung dung zalo" -> "zalo" */
+    fun appName(folded: String): String =
+        folded.replace(Regex("""^.*?\b(?:mo|open)\s+"""), "").replace(Regex("""^(?:ung dung|app|ap)\s+"""), "")
+            .replace(Regex("""\s+(?:len|ra|giup|cho toi|di)$"""), "").trim()
+
     fun workspaceName(folded: String): String {
         val m = Regex("""(?:khong gian|workspace|che do|bo cuc)\s+(.+)$""").find(folded)
         return (m?.groupValues?.get(1) ?: folded).replace(Regex("""^(?:ten|la|so)\s+"""), "").trim()
@@ -343,6 +356,22 @@ object VoiceCommands {
         if (has("web sang", "che do sang", "light mode")) return Cmd.DarkWeb(false)
         if (has("khong gian", "workspace", "bo cuc")) return Cmd.Workspace(workspaceName(t))
         if (has("hien so", "hien luoi", "luoi", "show grid", "cac o")) return Cmd.ShowGrid
+        // phone mirror
+        if (has("man hinh dien thoai", "chieu dien thoai", "mirror", "guong dien thoai")) {
+            return if (has("tat", "dong", "off", "stop", "dung")) Cmd.MirrorOff else Cmd.Mirror(slot)
+        }
+        // live captions / interpreter
+        if (has("tat phu de", "tat dich", "captions off", "stop captions")) return Cmd.Captions(CaptionMode.OFF)
+        if (has("dich sang tieng anh", "dich viet anh", "viet sang anh", "translate to english")) return Cmd.Captions(CaptionMode.VI_TO_EN)
+        if (has("dich tieng anh", "dich anh viet", "anh sang viet", "dich", "translate", "phien dich")) return Cmd.Captions(CaptionMode.EN_TO_VI)
+        if (has("phu de tieng anh", "english captions", "english subtitles")) return Cmd.Captions(CaptionMode.EN)
+        if (has("phu de", "captions", "subtitles", "caption")) return Cmd.Captions(CaptionMode.VI)
+        // teleprompter
+        if (has("tat nhac chu", "dung doc", "tat teleprompter", "stop teleprompter", "tat prompter")) return Cmd.Prompter(false)
+        if (has("teleprompter", "prompter", "nhac chu", "bat dau doc", "kich ban")) return Cmd.Prompter(true)
+        // phone navigation (works on the mirrored app via Accessibility)
+        if (has("quay lai", "tro lai", "go back")) return Cmd.Back
+        if (has("man hinh chinh", "go home", "ve home")) return Cmd.Home
         // slots
         if (slot != null && has("xoa", "dong", "tat", "bo", "clear", "close", "remove")) return Cmd.ClearSlot(slot)
         if (slot != null) {
@@ -373,10 +402,11 @@ object VoiceCommands {
             has("nho hon", "thu nho", "smaller") -> Cmd.Size(false)
             has("xa hon", "day ra", "farther", "further") -> Cmd.Farther
             has("gan hon", "keo lai", "closer") -> Cmd.Closer
-            has("cam man", "di chuyen man", "grab", "keo man") -> Cmd.Grab
+            has("cam man", "di chuyen man", "keo man") -> Cmd.Grab
             has("khoa dau", "head lock", "theo dau") -> Cmd.HeadLock(null)
             has("hieu chinh", "calibrate") -> Cmd.Calibrate
             has("thong bao", "notification") -> Cmd.Notify
+            has("mo", "open") && siteFromText(t) == null && appName(t).isNotBlank() -> Cmd.LaunchApp(appName(t))
             text.trim().endsWith("?") || has("la gi", "bao nhieu", "the nao", "tai sao", "o dau", "khi nao", "what", "why", "how") -> Cmd.Ask(text)
             else -> Cmd.Unknown(text)
         }

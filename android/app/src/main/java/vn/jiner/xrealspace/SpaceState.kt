@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import vn.jiner.xrealspace.core.AxisWizard
+import vn.jiner.xrealspace.core.CaptionMode
 import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.ImuTracker
 import vn.jiner.xrealspace.core.M3
@@ -46,6 +47,8 @@ object SpaceState {
     var showStatus = true
     var wizard: AxisWizard? = null
     var focusedPanel = -1
+    /** a SpaceView is currently shown on the glasses (activity- or service-hosted) */
+    @Volatile var glassesActive = false
     var recenterRequested = false
     /** panel carried by the head until released (-1 = none) */
     var grabbedPanel = -1
@@ -57,6 +60,9 @@ object SpaceState {
 
     // --- watching / working / moving (persisted)
     var followMode = FollowMode.WORLD
+    var captionMode = CaptionMode.OFF
+    /** teleprompter script (persisted) */
+    var prompterScript = ""
     var darkWeb = true
     var pauseOffscreen = true
     /** fullscreen video size, fraction of the glasses screen */
@@ -77,6 +83,13 @@ object SpaceState {
     interface Controller {
         fun ask(question: String)
         fun summarizeFocused()
+        fun launchApp(name: String)
+        fun mirror(slot: Int?, then: (() -> Unit)? = null)
+        fun mirrorOff()
+        fun phoneBack(): Boolean
+        fun phoneHome(): Boolean
+        fun setCaptions(mode: CaptionMode)
+        fun setPrompter(on: Boolean?)
     }
     var controller: Controller? = null
 
@@ -202,11 +215,17 @@ object SpaceState {
         val u = normalizeUrl(url)
         val name = title?.takeIf { it.isNotBlank() }?.take(24) ?: hostOf(u)
         val existing = config.screens.indexOfFirst { SlotGrid.slotOf(it) == slot }
+        // web <-> phone mirror is a different kind of panel: rebuild instead of just loading a URL
+        if (existing >= 0 && config.screens[existing].url.startsWith("mirror:") != u.startsWith("mirror:")) {
+            config.screens.removeAt(existing)
+            config.screens.add(SlotGrid.spec(slot, name, u).also { if (u.startsWith("mirror:")) it.widthM = 0.5 })
+            panelsVersion++; save(); showGrid(3.0); notify("Ô $slot", name, Colors.GREEN, 2.0); return
+        }
         if (existing >= 0) {
             config.screens[existing].url = u; config.screens[existing].title = name
             pendingLoads[existing] = u
         } else {
-            config.screens.add(SlotGrid.spec(slot, name, u)); panelsVersion++
+            config.screens.add(SlotGrid.spec(slot, name, u).also { if (u.startsWith("mirror:")) it.widthM = 0.5 }); panelsVersion++
         }
         save(); showGrid(3.0)
         notify("Ô $slot", "$name", Colors.GREEN, 2.0)
@@ -284,6 +303,17 @@ object SpaceState {
             VoiceCommands.Cmd.ShowGrid -> showGrid(8.0)
             is VoiceCommands.Cmd.Workspace -> setWorkspace(cmd.name)
             is VoiceCommands.Cmd.Follow -> setFollow(cmd.mode)
+            is VoiceCommands.Cmd.LaunchApp -> controller?.launchApp(cmd.name)
+            is VoiceCommands.Cmd.Mirror -> controller?.mirror(cmd.slot)
+            VoiceCommands.Cmd.MirrorOff -> controller?.mirrorOff()
+            is VoiceCommands.Cmd.Captions -> controller?.setCaptions(cmd.mode)
+            is VoiceCommands.Cmd.Prompter -> controller?.setPrompter(cmd.on)
+            VoiceCommands.Cmd.Back -> {
+                val onMirror = config.screens.getOrNull(focusedPanel)?.url == Assistant.MIRROR_URL
+                if (onMirror) { if (controller?.phoneBack() != true) notify("Quay lại", "Cần bật Trợ năng cho XREAL Space", Colors.AMBER, 3.0) }
+                else SpaceHost.space?.back()
+            }
+            VoiceCommands.Cmd.Home -> if (controller?.phoneHome() != true) notify("Màn hình chính", "Cần bật Trợ năng cho XREAL Space", Colors.AMBER, 3.0)
             is VoiceCommands.Cmd.DarkWeb -> setDarkWeb(cmd.on)
             is VoiceCommands.Cmd.SaveWorkspace -> saveWorkspace(cmd.name)
             is VoiceCommands.Cmd.Place -> place(cmd.slot, cmd.url, cmd.title)
@@ -302,12 +332,12 @@ object SpaceState {
 
     fun normalizeUrl(s: String): String {
         val t = s.trim()
-        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:")) return t
+        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:") || t.startsWith("mirror:")) return t
         if (t.contains('.') && !t.contains(' ')) return "https://$t"
         return VoiceCommands.searchUrl(t)
     }
 
-    private fun hostOf(u: String) = try { java.net.URI(u).host?.removePrefix("www.")?.removePrefix("m.") ?: u } catch (e: Exception) { u }.take(24)
+    private fun hostOf(u: String) = if (u.startsWith("mirror:")) "Điện thoại" else try { java.net.URI(u).host?.removePrefix("www.")?.removePrefix("m.") ?: u } catch (e: Exception) { u }.take(24)
 
     // ------------------------------------------------------------------ persistence
     private const val PREFS = "space"
@@ -329,6 +359,7 @@ object SpaceState {
         for (w in savedWorkspaces.values) ws.put(JSONObject().put("id", w.id).put("title", w.title).put("distanceM", w.distanceM)
             .put("showMap", w.showMap).put("screens", screensJson(w.screens)))
         val o = JSONObject()
+            .put("prompterScript", prompterScript)
             .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
@@ -342,6 +373,7 @@ object SpaceState {
         val s = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SETTINGS, null) ?: return
         try {
             val o = JSONObject(s)
+            prompterScript = o.optString("prompterScript", prompterScript)
             followMode = runCatching { FollowMode.valueOf(o.optString("followMode", followMode.name)) }.getOrDefault(followMode)
             darkWeb = o.optBoolean("darkWeb", darkWeb); pauseOffscreen = o.optBoolean("pauseOffscreen", pauseOffscreen)
             cinemaScale = o.optDouble("cinemaScale", cinemaScale).coerceIn(0.4, 1.0)

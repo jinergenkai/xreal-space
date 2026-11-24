@@ -75,6 +75,10 @@ object AiClient {
                 "Tiêu đề: $title\n\n${pageText.take(12000)}", 500)
         }, done)
 
+    /** One caption segment, e.g. English -> Vietnamese, for the live interpreter. */
+    fun translate(text: String, from: String, to: String, done: (Result<String>) -> Unit) =
+        async({ llmComplete(vn.jiner.xrealspace.core.TranslatePrompt.system(from, to), text, 200) }, done)
+
     // ------------------------------------------------------------------ Jev
     /** Spoken command -> one app command via TypeSafe Jev (classifier); params come from the transcript. */
     fun jevCommand(text: String, done: (Result<Pair<VoiceCommands.Cmd, JevProtocol.Decision>>) -> Unit) =

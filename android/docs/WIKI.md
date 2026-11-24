@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 24/11/2026 · bản 0.3.0 · bản online (có thể mất cùng tài khoản Claude): https://claude.ai/artifact/4wwyRLcWBM7DaLJWWfwouB
+Cập nhật: 25/11/2026 · bản 0.4.0 · bản online (có thể mất cùng tài khoản Claude): https://claude.ai/artifact/4wwyRLcWBM7DaLJWWfwouB
 File này là bản gốc nằm trong repo. Sửa ở đây trước.
 
 ## 1. Tổng quan
@@ -57,8 +57,14 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Di chuyển | Chế độ di chuyển: màn hình đi theo hướng người, xe rẽ không lệch | Chờ test | 0.3 |
 | Di chuyển | Chế độ đi bộ: ẩn màn lớn, giữ bản đồ + giờ | PC ✓ | 0.1 |
 | Pin | Tạm dừng trang không nhìn quá 8 giây | Chờ test | 0.3 |
-| Chưa | Mở app gốc (Netflix, Zalo app) trên kính | Chưa | — |
-| Chưa | Phụ đề / dịch trực tiếp, thông báo thật của điện thoại | Chưa | — |
+| Điện thoại | Màn hình điện thoại vào một ô (Zalo, Netflix, Grab… trên kính) | Chờ test | 0.4 |
+| Điện thoại | Mở app bằng giọng ("mở Zalo"), tự bật chiếu màn hình | Chờ test | 0.4 |
+| Điện thoại | Bấm / vuốt vào app qua chấm ngắm (Trợ năng), "quay lại", "màn hình chính" | Chờ test | 0.4 |
+| Điện thoại | Kính vẫn chạy khi mở app khác; nút âm lượng vẫn làm remote | Chờ test | 0.4 |
+| Teleprompter | Kịch bản chạy theo giọng đọc (Vosk vi/en), lùi/tới bằng vuốt 2 ngón | Chờ test | 0.4 |
+| Phụ đề | Phụ đề trực tiếp tiếng Việt / tiếng Anh (offline) | Chờ test | 0.4 |
+| Phụ đề | Phiên dịch Anh → Việt, Việt → Anh (cần LLM) | Chờ test | 0.4 |
+| Chưa | Thông báo thật của điện thoại hiện trên kính, trả lời bằng giọng | Chưa | — |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
 
@@ -79,11 +85,24 @@ Giữ yên đầu 1 giây khi kính hiện "Giữ yên đầu…". Muốn vào c
 | 2 ngón vuốt ↑ | Hiện số 9 ô |
 | 2 ngón vuốt ↓ | Bật/tắt chế độ đi bộ |
 | 3 ngón chạm | Đổi chế độ: Cố định → Rạp phim → Di chuyển |
+| 2 ngón vuốt ← / → khi đang nhắc chữ | Teleprompter tới / lùi 8 từ |
 
 **Nút âm lượng:** + bấm = click · + giữ = nói lệnh · − = về giữa. Nhẫn / remote Bluetooth gửi phím âm lượng cũng dùng được.
 
 **Bàn phím Bluetooth:** R về giữa · W đi bộ · M bản đồ · T đổi chế độ · D web tối · G cầm/đặt màn · V nói lệnh · N thông báo mẫu ·
 F head-lock · H status · C hiệu chỉnh trục · B đo lại bias · ↑/↓ xa/gần · [ / ] FOV · Esc back.
+
+**Bàn phím Bluetooth thêm:** P bật/tắt teleprompter · ← → / PageUp PageDown = lùi/tới khi nhắc chữ.
+
+**Điện thoại trên kính (bản 0.4):**
+1. Cấp 2 quyền trong app: **Quyền hiện trên app khác** (kính vẫn chạy khi bạn mở Zalo, Netflix…) và **Bật Trợ năng** (bấm vào app qua chấm ngắm; nút âm lượng vẫn làm remote khi app khác đang mở).
+2. Nói "mở Zalo" (hoặc gõ tên app → **Mở app**). Lần đầu điện thoại hỏi quyền chiếu màn hình → **Bắt đầu**. Màn hình điện thoại hiện ở ô 4.
+3. Dùng app: chạm thẳng lên điện thoại (mắt nhìn ô trên kính), hoặc nhìn chấm ngắm vào nút trong ô rồi bấm âm lượng +. "Quay lại", "màn hình chính" bằng giọng.
+4. "tắt màn hình điện thoại" để dừng chiếu. Khi app XREAL Space đang mở trên điện thoại, ô chiếu sẽ hiện chính touchpad.
+
+**Teleprompter:** dán kịch bản vào ô Teleprompter → **▶ Bắt đầu** (hoặc nói "bật nhắc chữ"). Cứ đọc, chữ tự chạy; từ sắp đọc tô vàng. Kịch bản có dấu tiếng Việt dùng model Việt, không dấu dùng model Anh.
+
+**Phụ đề:** chọn **Phụ đề Việt**, **English**, **Dịch Anh → Việt** hoặc **Dịch Việt → Anh** (hoặc nói "bật phụ đề", "dịch tiếng Anh", "tắt phụ đề"). Lần đầu tải model ngôn ngữ đó (~32–40 MB). Dịch cần cấu hình LLM.
 
 **Đầu:** gật = OK / đặt màn đang cầm / bật-tắt bản đồ · lắc = bỏ qua.
 
@@ -108,6 +127,9 @@ Khi đang nghe lệnh, kính hiện số trên các ô: ô trống màu xanh, ô
 | Chế độ | "chế độ di chuyển" · "cố định màn hình" · "đi theo đầu" · "chế độ đi bộ" · "tắt đi bộ" |
 | Hiển thị | "về giữa" · "xa hơn" · "gần hơn" · "to hơn" · "nhỏ hơn" · "bật web tối" · "tắt bản đồ" |
 | Màn hình | "cầm màn" (rồi gật để đặt) · "khoá đầu" |
+| Điện thoại | "mở Zalo" · "mở ứng dụng Grab" · "màn hình điện thoại ô 4" · "tắt màn hình điện thoại" · "quay lại" · "màn hình chính" |
+| Phụ đề | "bật phụ đề" · "phụ đề tiếng Anh" · "dịch tiếng Anh" · "dịch sang tiếng Anh" · "tắt phụ đề" |
+| Teleprompter | "bật nhắc chữ" · "teleprompter" · "tắt nhắc chữ" |
 | AI (cần LLM) | "tóm tắt trang này" · "thủ đô của Pháp là gì" · lệnh nhiều bước: "mở YouTube ô 3 rồi tắt bản đồ" |
 
 Không gian dựng sẵn: **làm việc** (Google, Gmail, Lịch) · **code** (GitHub, Claude, Docs, Tìm) · **giải trí** (một màn rạp phim, tự bật chế độ rạp) · **họp** (Meet, Ghi chú).
@@ -124,6 +146,7 @@ mic → [từ đánh thức "kính ơi" · Vosk offline]  hoặc nút 🎤 / gi�
 | Thành phần | Lựa chọn | Chi phí | Ghi chú |
 | --- | --- | --- | --- |
 | Từ đánh thức | Vosk `vosk-model-small-vn-0.4` (~32 MB, tự tải lần đầu) | Miễn phí, Apache 2.0 | Grammar chỉ gồm cụm đánh thức + `[unk]`. Ngoài đường ồn: dùng giữ-để-nói |
+| Phụ đề / teleprompter | Vosk `vosk-model-small-vn-0.4` và `vosk-model-small-en-us-0.15` (~40 MB), nghe liên tục | Miễn phí | Phiên dịch: mỗi câu gửi LLM dịch |
 | Giọng nói → chữ | Vosk offline / Google | Vosk miễn phí; Google cần dịch vụ Google trên máy | Mic của kính có được Android dùng không: cần test |
 | Chữ → lệnh: luật | Có sẵn | Miễn phí | Chạy trước mọi engine |
 | Chữ → lệnh: Jev (TypeSafe) | OpenRouter `https://openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`; hoặc `https://api.typesafe.ai/v1/systemone`, model `jev-latest` | ~0.042 USD / 1 triệu token vào, output miễn phí, không có gói free | Chỉ chọn lệnh + xác suất; URL / từ khoá lấy từ câu nói |
@@ -155,8 +178,11 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 | `HudViews.kt` | Bản đồ, giờ/pin, thông báo, chấm ngắm |
 | `TouchpadView.kt` | Touchpad toàn màn hình, cử chỉ 1–3 ngón |
 | `VoiceInput.kt` · `AiClient.kt` | Vosk + Google STT · gọi Jev / LLM |
+| `Assistant.kt` | "Bộ não" chạy độc lập với màn hình: giọng nói → lệnh, trợ lý, phụ đề, teleprompter, mở app |
+| `GlassesService.kt` | Giữ kính chạy khi mở app khác (overlay), chiếu màn hình điện thoại (MediaProjection), Trợ năng (bấm vào app, nút âm lượng) |
+| `core/Assist.kt` | Teleprompter theo giọng, dòng phụ đề, quy đổi toạ độ ô chiếu → điện thoại, tìm app theo tên |
 | `SpaceState.kt` · `MainActivity.kt` | Trạng thái chung + lưu cài đặt · màn điều khiển, Presentation, bàn phím, phím tắt |
-| `app/src/test/.../CoreTest.kt` | 19 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
+| `app/src/test/.../CoreTest.kt` | 22 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
 
 ## 7. Checklist test trên Beam Pro / điện thoại
 
@@ -173,6 +199,11 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] 🎤 Nói lệnh (lần đầu tải model Vosk) · bật từ đánh thức, nói "kính ơi" rồi "Gmail ô 4"
 - [ ] Mic của kính có thu được giọng không (thử khi điện thoại để xa)
 - [ ] (có key) Jev / LLM: "mở YouTube ô 3 rồi tắt bản đồ", "tóm tắt trang này"
+- [ ] Cấp quyền hiện trên app khác + Trợ năng; "mở Zalo" → màn hình ĐT hiện ở ô 4, vẫn hiện khi Zalo ở phía trước
+- [ ] Nhìn chấm ngắm vào nút trong ô điện thoại, bấm âm lượng + → nút được bấm; "quay lại" chạy
+- [ ] Netflix trong ô điện thoại: hình có bị đen không (DRM)
+- [ ] Teleprompter: dán đoạn văn, đọc to, chữ có chạy theo không
+- [ ] Phụ đề Việt khi người khác nói; Dịch Anh → Việt với video tiếng Anh (cần LLM)
 - [ ] Sau 15 phút dùng: máy nóng tới đâu, pin tụt bao nhiêu
 - [ ] Gửi lại: Chẩn đoán → Copy, kèm bước nào được / không
 
@@ -183,7 +214,10 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 **Giới hạn:**
 - Chỉ 3DoF, hiển thị mono; màn đặt kiểu "billboard": đúng vị trí, cỡ, nghiêng đầu, nhưng không méo phối cảnh khi nhìn xiên.
 - Yaw vẫn trôi chậm: về giữa bằng 2 ngón chạm hoặc nút −.
-- Chỉ mở web, chưa mở app gốc (Netflix app, Zalo app). Video có DRM trong WebView có thể không chạy.
+- App gốc hiện qua chiếu màn hình điện thoại: app có DRM (Netflix, một số app ngân hàng) có thể ra màn đen. Video có DRM trong WebView cũng có thể không chạy.
+- Chiếu màn hình chỉ hiện đúng một thứ đang ở phía trước điện thoại: khi XREAL Space đang mở, ô chiếu hiện chính touchpad.
+- Beam Pro dùng NebulaOS: cửa sổ overlay lên kính và chiếu màn hình có chạy được không: cần test.
+- Phụ đề / teleprompter dùng model Vosk nhỏ: nơi ồn hoặc nói nhanh sẽ sai nhiều.
 - Rạp phim hiện bằng cách dịch chuyển khung video; với vài kiểu video (SurfaceView) có thể không bám theo được: cần test.
 - Beam Pro có thể giữ cổng HID của kính, làm app không đọc được IMU: cần test bằng thẻ chẩn đoán.
 - Đeo kính khi lái xe máy / ô tô là nguy hiểm: app chưa chặn.
@@ -191,15 +225,16 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 **Lộ trình đề xuất:**
 1. Build + test trên Beam Pro, sửa theo log chẩn đoán.
 2. Backend giữ key AI, đếm lượt, gói Premium.
-3. Mirror màn hình điện thoại vào một ô (bù cho việc chưa mở được app gốc).
-4. Phụ đề / dịch trực tiếp, thông báo thật của điện thoại trên kính.
-5. Bản đồ GPS thật, chặn hiển thị khi đi nhanh.
-6. Render GL: méo phối cảnh, 3D stereo SBS.
+3. Thông báo thật của điện thoại trên kính, trả lời tin nhắn bằng giọng.
+4. Bản đồ GPS thật, chặn hiển thị khi đi nhanh.
+5. Render GL: méo phối cảnh, 3D stereo SBS.
+6. Chạy trên XREAL Beam (đời đầu, không màn hình): điện thoại làm touchpad qua Wi-Fi.
 
 ## 9. Nhật ký phiên bản
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.4.0 | Màn hình điện thoại vào một ô + mở app bằng giọng + bấm qua chấm ngắm (Trợ năng); kính chạy nền khi mở app khác; teleprompter theo giọng đọc; phụ đề Việt/Anh và phiên dịch Anh↔Việt |
 | 24/11/2026 | 0.3.0 | Touchpad toàn màn hình; tự kết nối / tự chiếu; bàn phím điện thoại + đọc chính tả; YouTube toàn màn hình (rạp phim); web tối; 3 chế độ Cố định / Rạp phim / Di chuyển; luật chạy trước Jev/LLM; tạm dừng màn khuất; wiki |
 | 24/11/2026 | 0.2.0 | AI giọng nói: Vosk (từ đánh thức + nhận lệnh offline), Google STT, hiểu lệnh bằng luật / Jev / LLM; lưới 9 ô; không gian lưu sẵn; tóm tắt trang; cầm màn |
 | 24/11/2026 | 0.1.0 | Port Android: IMU qua USB, 3 WebView world-locked, bản đồ, HUD, gật/lắc, wizard trục, touchpad, phím âm lượng, chẩn đoán; sửa lỗi bias gyro |

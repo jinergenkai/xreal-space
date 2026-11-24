@@ -51,11 +51,17 @@ class SpacePresentation(ctx: Context, display: Display) : Presentation(ctx, disp
         setContentView(space)
     }
 
-    override fun onStart() { super.onStart(); space.start() }
-    override fun onStop() { space.stop(); super.onStop() }
+    override fun onStart() { super.onStart(); space.start(); SpaceState.glassesActive = true }
+    override fun onStop() { space.stop(); SpaceState.glassesActive = false; super.onStop() }
 }
 
-class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
+class MainActivity : Activity(), TouchpadView.Host {
+    companion object {
+        const val ACTION_REQUEST_MIRROR = "vn.jiner.xrealspace.REQUEST_MIRROR"
+        private const val REQ_MIRROR = 42
+        /** true while this activity is in front (the Accessibility key filter only acts when it is NOT) */
+        @Volatile var inForeground = false; private set
+    }
     private lateinit var usb: GlassesUsb
     private lateinit var phoneImu: PhoneImu
     private lateinit var dm: DisplayManager
@@ -73,21 +79,24 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
     private lateinit var urlField: EditText
     private lateinit var typeField: EditText
     private lateinit var backBtn: Button
-    private lateinit var voice: VoiceInput
+    private val voice: VoiceInput get() = Assistant.voice
+    private var afterMirrorGrant: (() -> Unit)? = null
     private lateinit var padOverlay: FrameLayout
     private lateinit var kbField: EditText
     private var kbActive = false
     private var kbProgrammatic = false
-    private var dictating = false
     private lateinit var aiStatus: TextView
 
-    private val space: SpaceView? get() = phoneSpace ?: presentation?.space
+    private val space: SpaceView? get() = SpaceHost.space ?: phoneSpace ?: presentation?.space
+    /** the glasses are hosted by GlassesService (overlay) so they survive other apps in front */
+    private val serviceHosted get() = GlassesService.instance?.presentation != null
 
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(id: Int) { SpaceState.log("display added $id"); if (started && wantGlassesOutput) showOnGlasses(quiet = true) }
         override fun onDisplayRemoved(id: Int) {
             SpaceState.log("display removed $id")
             if (presentation?.display?.displayId == id) { presentation?.dismiss(); presentation = null; showTouchpad(false) }
+            GlassesService.instance?.presentation?.let { if (it.display.displayId == id) { GlassesService.instance?.hide(); showTouchpad(false) } }
         }
         override fun onDisplayChanged(id: Int) {}
     }
@@ -101,8 +110,8 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
         usb = GlassesUsb(this) { ui.post { refreshStatus(); if (usb.connected && started && wantGlassesOutput) showOnGlasses(quiet = true) } }
         phoneImu = PhoneImu(this)
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        voice = VoiceInput(this) { text -> handleUtterance(text) }
-        SpaceState.controller = this
+        Assistant.init(this)
+        Assistant.mirrorRequester = { after -> requestMirror(after) }
         buildUi()
         usb.register()
         dm.registerDisplayListener(displayListener, ui)
@@ -115,6 +124,7 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
 
     private fun handleIntent(i: Intent?) {
         if (i?.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) connectGlasses()
+        if (i?.action == ACTION_REQUEST_MIRROR) { val slot = i.getIntExtra("slot", 4); requestMirror { Assistant.ensureMirrorPanel(slot) } }
     }
 
     override fun onStart() {
@@ -126,10 +136,13 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
         if (SpaceState.wakeEnabled && hasMic()) voice.startWake()
     }
 
+    override fun onResume() { super.onResume(); inForeground = true }
+    override fun onPause() { inForeground = false; super.onPause() }
+
     override fun onStop() {
         started = false
         ui.removeCallbacks(ticker)
-        voice.stopWake()
+        if (!serviceHosted) voice.stopWake()   // service-hosted glasses keep listening while other apps are in front
         phoneSpace?.stop()
         presentation?.dismiss(); presentation = null
         showTouchpad(false)
@@ -140,8 +153,7 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
     override fun onDestroy() {
         dm.unregisterDisplayListener(displayListener)
         usb.unregister(); usb.close(); phoneImu.stop()
-        voice.release()
-        if (SpaceState.controller === this) SpaceState.controller = null
+        Assistant.mirrorRequester = null
         phoneSpace?.destroy()
         super.onDestroy()
     }
@@ -167,7 +179,15 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
 
     private fun showOnGlasses(quiet: Boolean = false) {
         wantGlassesOutput = true
-        if (presentation != null) return
+        if (presentation != null || serviceHosted) { showTouchpad(true); return }
+        // preferred: host the glasses in the foreground service so they stay on when you open another app
+        if (GlassesService.canHost(this) && glassesDisplay() != null) {
+            leavePhoneScreen()
+            val it = Intent(this, GlassesService::class.java).setAction(GlassesService.ACTION_HOST)
+            if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(it) else startService(it)
+            showTouchpad(true)
+            return
+        }
         val d = glassesDisplay()
         if (d == null) {
             if (!quiet) SpaceState.notify("Không thấy màn hình kính", "Thử chế độ 'Xem trên màn hình này'", Colors.AMBER)
@@ -186,7 +206,7 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
 
     private fun showOnPhone() {
         wantGlassesOutput = false
-        presentation?.dismiss(); presentation = null; showTouchpad(false)
+        presentation?.dismiss(); presentation = null; GlassesService.instance?.hide(); showTouchpad(false)
         if (phoneSpace != null) return
         val s = SpaceView(this, onPhoneScreen = true)
         phoneSpace = s
@@ -229,87 +249,40 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
         refreshAi()
     }
 
-    /** Speech text -> intent (rules / Jev / LLM) -> commands. Falls back to rules when the network engine fails. */
-    private fun handleUtterance(text: String) {
-        val st = SpaceState
-        st.log("voice: $text")
-        st.voiceHeard = text
-        if (dictating) {   // holding the touchpad while a page text field is focused = dictation
-            dictating = false
-            val cur = kbField.text.toString()
-            kbField.setText(if (cur.isBlank()) text else "$cur $text"); kbField.setSelection(kbField.text.length)
-            return
+    private fun handleUtterance(text: String) = Assistant.handleUtterance(text)
+    private fun summarizeFocused() = Assistant.summarizeFocused()
+
+    // ------------------------------------------------------------------ phone mirror (MediaProjection consent needs an Activity)
+    private fun requestMirror(after: (() -> Unit)?) {
+        if (!GlassesService.canHost(this)) {
+            SpaceState.notify("Màn hình điện thoại", "Cho phép \"Hiển thị trên ứng dụng khác\" để kính vẫn chạy khi mở app khác", Colors.AMBER, 5.0)
+            openOverlaySettings(); return
         }
-        val rules = VoiceCommands.parse(text)
-        fun runRules(prefix: String = "") {
-            if (rules !is VoiceCommands.Cmd.Unknown) st.notify("🎤 $text", prefix + label(rules), Colors.GREEN, 2.0)
-            st.execute(rules)
-        }
-        // rules first: a simple command that the rules understood runs instantly, no network round trip
-        if (st.intentEngine != SpaceState.IntentEngine.RULES && FastPath.accept(text, rules)) { runRules("⚡ "); return }
-        when (st.intentEngine) {
-            SpaceState.IntentEngine.RULES -> runRules()
-            SpaceState.IntentEngine.JEV -> {
-                if (!st.jevReady) { runRules("(chưa có key Jev) "); return }
-                st.voiceState = "thinking"
-                AiClient.jevCommand(text) { r ->
-                    st.voiceState = ""
-                    r.onSuccess { (cmd, d) ->
-                        st.log("jev: ${d.intent} %.2f site=${d.site} switch=${d.switch}".format(d.confidence))
-                        if (cmd is VoiceCommands.Cmd.Unknown && rules !is VoiceCommands.Cmd.Unknown) { runRules("(Jev không chắc) "); return@onSuccess }
-                        st.notify("🎤 $text", "Jev: ${d.intent} · %.0f%%".format(d.confidence * 100), Colors.GREEN, 2.0)
-                        st.execute(cmd)
-                    }.onFailure { e -> st.log("jev failed: ${AiClient.describe(e)}"); runRules("(Jev lỗi, dùng luật) ") }
-                }
-            }
-            SpaceState.IntentEngine.LLM -> {
-                if (!st.llmReady) { runRules("(chưa cấu hình LLM) "); return }
-                st.voiceState = "thinking"
-                AiClient.llmCommand(text) { r ->
-                    st.voiceState = ""
-                    r.onSuccess { reply ->
-                        if (reply.cmds.isEmpty()) { runRules(); return@onSuccess }
-                        st.notify("🎤 $text", reply.say ?: reply.cmds.joinToString(" → ") { label(it) }, Colors.GREEN, 2.5)
-                        reply.cmds.forEach { st.execute(it) }
-                    }.onFailure { e -> st.log("llm failed: ${AiClient.describe(e)}"); runRules("(LLM lỗi, dùng luật) ") }
-                }
-            }
-        }
+        afterMirrorGrant = after
+        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        @Suppress("DEPRECATION") startActivityForResult(mpm.createScreenCaptureIntent(), REQ_MIRROR)
     }
 
-    private fun label(c: VoiceCommands.Cmd): String = when (c) {
-        is VoiceCommands.Cmd.Place -> "ô ${c.slot}: ${c.title ?: c.url}"
-        is VoiceCommands.Cmd.Open -> "mở ${c.url}"
-        is VoiceCommands.Cmd.ClearSlot -> if (c.slot == 0) "xoá màn đang nhìn" else "xoá ô ${c.slot}"
-        is VoiceCommands.Cmd.Workspace -> "không gian ${c.name}"
-        is VoiceCommands.Cmd.SaveWorkspace -> "lưu không gian ${c.name}"
-        else -> c.javaClass.simpleName
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_MIRROR) return
+        if (resultCode != RESULT_OK || data == null) { SpaceState.notify("Màn hình điện thoại", "Đã huỷ", Colors.AMBER, 2.0); return }
+        GlassesService.afterMirror = afterMirrorGrant; afterMirrorGrant = null
+        val it = Intent(this, GlassesService::class.java).setAction(GlassesService.ACTION_MIRROR)
+            .putExtra(GlassesService.EXTRA_CODE, resultCode).putExtra(GlassesService.EXTRA_DATA, data)
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(it) else startService(it)
+        presentation?.dismiss(); presentation = null   // the service takes over the glasses
+        showTouchpad(true)
     }
 
-    // SpaceState.Controller
-    override fun ask(question: String) {
-        val st = SpaceState
-        if (!st.llmReady) { st.notify("Trợ lý", "Cần cấu hình LLM (Cài đặt AI) để trả lời câu hỏi", Colors.AMBER, 3.0); return }
-        st.voiceState = "thinking"
-        AiClient.llmAsk(question) { r ->
-            st.voiceState = ""
-            r.onSuccess { st.showCard("❓ $question", it.trim()) }.onFailure { st.notify("Trợ lý lỗi", AiClient.describe(it), Colors.RED, 4.0) }
-        }
+    private fun openOverlaySettings() {
+        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
     }
 
-    override fun summarizeFocused() {
-        val st = SpaceState
-        val web = space?.focusedWeb() ?: run { st.notify("Tóm tắt", "Không có màn nào", Colors.AMBER); return }
-        if (!st.llmReady) { st.notify("Tóm tắt", "Cần cấu hình LLM (Cài đặt AI)", Colors.AMBER, 3.0); return }
-        st.voiceState = "thinking"; st.voiceHeard = "tóm tắt trang"
-        web.evaluateJavascript("(function(){return (document.title||'')+'\\n'+(document.body?document.body.innerText:'').slice(0,15000);})()") { raw ->
-            val txt = try { org.json.JSONArray("[$raw]").getString(0) } catch (e: Exception) { raw ?: "" }
-            val title = txt.substringBefore('\n')
-            AiClient.llmSummarize(title, txt.substringAfter('\n')) { r ->
-                st.voiceState = ""
-                r.onSuccess { st.showCard("📄 ${title.take(60)}", it.trim(), 40.0) }.onFailure { st.notify("Tóm tắt lỗi", AiClient.describe(it), Colors.RED, 4.0) }
-            }
-        }
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        SpaceState.notify("Trợ năng", "Chọn XREAL Space → Bật. Dùng để bấm vào app trên màn hình điện thoại và nút âm lượng khi mở app khác", Colors.CYAN, 6.0)
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
@@ -331,6 +304,9 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
             KeyEvent.KEYCODE_T -> st.setFollow(st.followMode.next())
             KeyEvent.KEYCODE_D -> st.setDarkWeb(null)
             KeyEvent.KEYCODE_ESCAPE -> space?.back()
+            KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> if (Assistant.prompter != null) Assistant.movePrompter(5) else return super.onKeyDown(keyCode, event)
+            KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_DPAD_LEFT -> if (Assistant.prompter != null) Assistant.movePrompter(-5) else return super.onKeyDown(keyCode, event)
+            KeyEvent.KEYCODE_P -> Assistant.setPrompter(null)
             KeyEvent.KEYCODE_VOLUME_DOWN -> st.recenter()
             KeyEvent.KEYCODE_R -> st.recenter()
             KeyEvent.KEYCODE_W -> st.toggleWalk()
@@ -370,10 +346,16 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
 
     // ------------------------------------------------------------------ eyes-free touchpad + phone keyboard
     override fun space(): SpaceView? = space
-    override fun onHold() { if (kbActive) { dictating = true; withMic { voice.captureCommand() } } else pushToTalk() }
+    override fun onHold() {
+        if (kbActive) {
+            Assistant.dictationSink = { t -> val cur = kbField.text.toString(); kbField.setText(if (cur.isBlank()) t else "$cur $t"); kbField.setSelection(kbField.text.length) }
+            withMic { voice.captureCommand() }
+        } else pushToTalk()
+    }
     override fun onTwoTap() = SpaceState.recenter()
     override fun onThreeTap() = SpaceState.setFollow(SpaceState.followMode.next())
     override fun onSwipe2(dx: Float, dy: Float) {
+        if (Assistant.prompter != null && kotlin.math.abs(dx) >= kotlin.math.abs(dy)) { Assistant.movePrompter(if (dx < 0) 8 else -8); return }
         if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) { if (dx < 0) space?.back() else space?.forward() }
         else if (dy < 0) SpaceState.showGrid(6.0) else SpaceState.toggleWalk()
     }
@@ -396,7 +378,7 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
 
     private fun hideKeyboard() {
         if (!::kbField.isInitialized) return
-        kbActive = false; dictating = false
+        kbActive = false; Assistant.dictationSink = null
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(kbField.windowToken, 0)
         kbField.clearFocus(); kbField.visibility = View.GONE
     }
@@ -452,6 +434,7 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
             append("\nNhận giọng: ${st.sttEngine} · model Vosk: ${voice.modelStatus}")
             append("\nTừ đánh thức: ${if (st.wakeEnabled) "BẬT" else "tắt"} (${st.wakePhrases.joinToString(" / ")})")
             append("\nKhông gian đã lưu: ${st.savedWorkspaces.values.joinToString { it.title }.ifEmpty { "-" }}")
+            append("\nKính chạy nền: ${if (GlassesService.canHost(this@MainActivity)) "được phép" else "chưa cấp quyền"} · Trợ năng: ${if (ControlService.instance != null) "bật" else "tắt"} · chiếu ĐT: ${if (MirrorController.active) "đang chạy" else "tắt"}")
         }
     }
 
@@ -560,6 +543,38 @@ class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
         })
 
         // ---------------------------------------------------------------- AI
+        // ---------------------------------------------------------------- phone apps on the glasses
+        col.addView(label("Điện thoại trên kính (Zalo, Netflix, Grab…)"))
+        col.addView(TextView(this).apply {
+            text = "Cần 2 quyền: \"Hiển thị trên ứng dụng khác\" (kính vẫn chạy khi mở app khác) và Trợ năng (bấm vào app qua chấm ngắm, nút âm lượng khi mở app khác)."
+            setTextColor(Colors.GREY); textSize = 12f
+        })
+        col.addView(row(btn("Quyền hiện trên app khác") { openOverlaySettings() }, btn("Bật Trợ năng") { openAccessibilitySettings() }))
+        col.addView(row(btn("Chiếu ĐT vào ô 4") { Assistant.mirror(4) }, btn("Tắt chiếu") { Assistant.mirrorOff() }))
+        val appField = EditText(this).apply { hint = "Tên app, vd: Zalo"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY) }
+        col.addView(row(appField, btn("Mở app") { if (appField.text.isNotBlank()) Assistant.launchApp(appField.text.toString()) }).apply {
+            (getChildAt(0).layoutParams as LinearLayout.LayoutParams).weight = 3f
+        })
+
+        // ---------------------------------------------------------------- live captions / interpreter
+        col.addView(label("Phụ đề & phiên dịch trực tiếp"))
+        col.addView(row(btn("Tắt") { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.OFF) },
+            btn("Phụ đề Việt") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.VI) } },
+            btn("English") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.EN) } }))
+        col.addView(row(btn("Dịch Anh → Việt") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.EN_TO_VI) } },
+            btn("Dịch Việt → Anh") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.VI_TO_EN) } }))
+
+        // ---------------------------------------------------------------- teleprompter
+        col.addView(label("Teleprompter (chữ chạy theo giọng đọc)"))
+        val scriptField = EditText(this).apply {
+            hint = "Dán kịch bản vào đây"; setText(SpaceState.prompterScript); minLines = 3; maxLines = 8
+            setTextColor(Color.WHITE); setHintTextColor(Colors.GREY); textSize = 13f
+        }
+        col.addView(scriptField)
+        col.addView(row(btn("▶ Bắt đầu") { SpaceState.prompterScript = scriptField.text.toString(); SpaceState.saveSettings(); withMic { Assistant.setPrompter(true) } },
+            btn("■ Dừng") { Assistant.setPrompter(false) },
+            btn("◀ Lùi") { Assistant.movePrompter(-8) }, btn("Tới ▶") { Assistant.movePrompter(8) }))
+
         col.addView(label("AI · giọng nói → lệnh"))
         aiStatus = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12f; typeface = Typeface.MONOSPACE }
         col.addView(aiStatus)

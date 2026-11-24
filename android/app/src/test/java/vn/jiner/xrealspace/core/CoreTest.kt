@@ -284,6 +284,53 @@ class CoreTest {
         assertFalse(FastPath.accept("tìm quán phở gần đây", VoiceCommands.parse("tìm quán phở gần đây")))
     }
 
+    @Test fun teleprompterFollowsVoice() {
+        val p = PrompterTracker("Xin chào các bạn, hôm nay mình giới thiệu kính XREAL Air 2 với app tự viết. Đầu tiên là lưới chín ô.")
+        assertEquals(0, p.pos)
+        assertTrue(p.hear("xin chào các bạn"))
+        assertEquals(4, p.pos)                                  // after "bạn,"
+        assertFalse(p.hear("ờ ừm"))                             // filler does not move
+        assertTrue(p.hear("hôm nay mình giới thiệu kính"))
+        assertEquals("kính", p.words[p.pos - 1])
+        assertTrue(p.hear("đầu tiên là lưới"))                  // skipped a sentence: jumps ahead inside the window
+        assertEquals("lưới", p.words[p.pos - 1])
+        p.move(-100); assertEquals(0, p.pos)
+    }
+
+    @Test fun captionLines() {
+        val b = CaptionBuffer(maxLines = 2, maxChars = 30)
+        b.onPartial("hello every")
+        assertEquals("hello every", b.visible().last().text)
+        b.onFinal("hello everyone")
+        b.onFinal("this is a much longer sentence that must be split across lines")
+        val v = b.visible()
+        assertEquals(2, v.size)
+        assertTrue(v.all { it.text.length <= 30 })
+        assertTrue(v.joinToString(" ") { it.text }.endsWith("split across lines"))
+    }
+
+    @Test fun mirrorAndApps() {
+        assertEquals(540f to 1200f, MirrorMap.toPhone(270f, 600f, 540f, 1200f, 1080, 2400)!!.let { it.first to it.second })
+        assertNull(MirrorMap.toPhone(-1f, 5f, 540f, 1200f, 1080, 2400))
+        val apps = listOf(AppMatcher.App("Zalo", "com.zing.zalo"), AppMatcher.App("Grab", "com.grabtaxi.passenger"),
+            AppMatcher.App("Google Maps", "com.google.android.apps.maps"), AppMatcher.App("Shopee", "com.shopee.vn"))
+        assertEquals("com.zing.zalo", AppMatcher.find("zalo", apps)!!.pkg)
+        assertEquals("com.google.android.apps.maps", AppMatcher.find("google maps", apps)!!.pkg)
+        assertNull(AppMatcher.find("telegram", apps))
+        assertEquals(VoiceCommands.Cmd.LaunchApp("zalo"), VoiceCommands.parse("mở Zalo"))
+        assertEquals(VoiceCommands.Cmd.LaunchApp("grab"), VoiceCommands.parse("mở ứng dụng Grab lên"))
+        assertEquals(VoiceCommands.Cmd.Open(null, "https://m.youtube.com"), VoiceCommands.parse("mở YouTube"))
+        assertEquals(VoiceCommands.Cmd.Mirror(4), VoiceCommands.parse("màn hình điện thoại ô 4"))
+        assertEquals(VoiceCommands.Cmd.MirrorOff, VoiceCommands.parse("tắt màn hình điện thoại"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.EN_TO_VI), VoiceCommands.parse("dịch tiếng Anh"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.VI), VoiceCommands.parse("bật phụ đề"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.OFF), VoiceCommands.parse("tắt phụ đề"))
+        assertEquals(VoiceCommands.Cmd.Prompter(true), VoiceCommands.parse("bật nhắc chữ"))
+        assertEquals(VoiceCommands.Cmd.Back, VoiceCommands.parse("quay lại"))
+        val r = LlmProtocol.parseReply("""{"actions":[{"fn":"open_app","name":"Zalo"},{"fn":"mirror","slot":4},{"fn":"captions","mode":"en_vi"}]}""")
+        assertEquals(listOf(VoiceCommands.Cmd.LaunchApp("Zalo"), VoiceCommands.Cmd.Mirror(4), VoiceCommands.Cmd.Captions(CaptionMode.EN_TO_VI)), r.cmds)
+    }
+
     @Test fun mockRouteWalks() {
         val r = MockRoute()
         val s0 = r.state()
