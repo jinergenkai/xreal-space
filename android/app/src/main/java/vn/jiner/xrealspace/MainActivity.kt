@@ -368,7 +368,8 @@ class MainActivity : Activity(), TouchpadView.Host {
     /** A box with no touchscreen (original XREAL Beam) can only be driven from a phone: start the host server. */
     private fun setupRemote() {
         RemoteLink.onChange = {
-            remoteText?.text = "Trạng thái: ${RemoteLink.status}" + if (RemoteLink.role == RemoteLink.Role.HOST) " · IP máy này: ${localIp()}" else ""
+            remoteText?.text = "Trạng thái: ${RemoteLink.status}" +
+                if (RemoteLink.role == RemoteLink.Role.HOST) "\nIP máy này: ${localIp()} · MÃ GHÉP ĐÔI: ${RemoteLink.pin}" else ""
         }
         RemoteLink.onFocus = { v -> onPageInputFocus(v) }
         RemoteLink.onBlur = { hideKeyboard() }
@@ -588,16 +589,26 @@ class MainActivity : Activity(), TouchpadView.Host {
             hint = "IP máy kính, vd 192.168.1.23 (để trống = tự tìm)"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY)
             setText(getSharedPreferences("remote", MODE_PRIVATE).getString("ip", ""))
         }
-        col.addView(ipField)
+        val pinField = EditText(this).apply {
+            hint = "Mã ghép đôi 4 số (hiện trên kính)"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY)
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(getSharedPreferences("remote", MODE_PRIVATE).getString("client_pin", ""))
+        }
+        col.addView(row(ipField, pinField).apply {
+            (getChildAt(0).layoutParams as LinearLayout.LayoutParams).weight = 2f
+        })
         col.addView(row(
             btn("Làm máy chủ (máy nối kính)") { RemoteLink.startHost(this); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", true).apply() },
             btn("Điều khiển máy kính") {
                 val ip = ipField.text.toString().trim()
-                getSharedPreferences("remote", MODE_PRIVATE).edit().putString("ip", ip).putBoolean("host", false).apply()
-                if (ip.isEmpty()) RemoteLink.discoverAndConnect(this) else RemoteLink.connect(ip)
+                val pin = pinField.text.toString().trim()
+                if (pin.length != 4) { SpaceState.notify("Điều khiển từ xa", "Nhập mã 4 số đang hiện trên kính", Colors.AMBER, 3.0); return@btn }
+                getSharedPreferences("remote", MODE_PRIVATE).edit().putString("ip", ip).putString("client_pin", pin).putBoolean("host", false).apply()
+                if (ip.isEmpty()) RemoteLink.discoverAndConnect(this, pin) else RemoteLink.connect(ip, pin)
                 showTouchpad(true)
             },
-            btn("Tắt") { RemoteLink.stop(); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", false).apply() }))
+            btn("Tắt") { RemoteLink.stop(); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", false).apply() },
+            btn("Đổi mã") { if (RemoteLink.role == RemoteLink.Role.HOST) RemoteLink.newPin(this) }))
 
         col.addView(label("Chế độ (xem phim · làm việc · di chuyển)"))
         col.addView(row(btn("Cố định") { SpaceState.setFollow(FollowMode.WORLD) }, btn("Rạp phim") { SpaceState.setFollow(FollowMode.CINEMA) },

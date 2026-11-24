@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.5.0
+Cập nhật: 25/11/2026 · bản 0.5.1
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -9,7 +9,7 @@ XREAL Space là app Android tự viết cho kính XREAL Air 2: đọc IMU kính 
 điều khiển bằng điện thoại, đầu và giọng nói. Không dùng SDK hay app của hãng. Hợp tác với anh Khoa; đối tượng là người có kính
 đời cũ mất hỗ trợ, dùng để **xem phim, làm việc và tiện ích khi di chuyển**.
 
-Trạng thái: code đã có, test lõi chạy qua, **chưa build APK và chưa chạy trên kính thật** (bản Android).
+Trạng thái: **APK build được** (GitHub Actions, 25/11/2026), test lõi chạy qua, **chưa chạy trên kính thật** (bản Android).
 Bản PC Python đã test trên kính thật ngày 23/11/2026.
 
 Mã nguồn: repo GitHub private **`jinergenkai/xreal-space`** (monorepo). Trên máy: `git clone` về `D:\project\xreal-space\xreal-space`.
@@ -118,9 +118,9 @@ F head-lock · H status · C hiệu chỉnh trục · B đo lại bias · ↑/�
 **XREAL Beam đời đầu (không màn hình) — điều khiển bằng điện thoại qua Wi-Fi (bản 0.5):**
 1. Cài app lên cả Beam (sideload APK) và điện thoại. Beam và điện thoại cùng một Wi-Fi (hoặc điện thoại phát hotspot cho Beam).
 2. Trên Beam: app tự nhận ra máy không có màn cảm ứng và bật **máy chủ** (cổng 47800). Máy có màn hình thì bấm **Làm máy chủ (máy nối kính)**.
-3. Trên điện thoại: mục **Điều khiển từ xa** → **Điều khiển máy kính**. Để trống ô IP = tự tìm; không tìm thấy thì nhập IP của Beam (hiện trên kính ở dòng trạng thái / trong Chẩn đoán).
+3. Trên kính hiện **mã ghép đôi 4 số** (hiện lại mỗi khi điện thoại ngắt). Trên điện thoại: mục **Điều khiển từ xa** → nhập mã → **Điều khiển máy kính**. Để trống ô IP = tự tìm; không tìm thấy thì nhập IP của Beam (hiện trên kính / trong Chẩn đoán). Mã được nhớ, lần sau không phải nhập lại.
 4. Khi đã nối: touchpad, cử chỉ 2–3 ngón, nút âm lượng, giữ để nói lệnh, bàn phím (chạm vào ô nhập trên kính → bàn phím điện thoại bật) đều gửi sang Beam.
-5. Chỉ nối được IP mạng nội bộ (192.168.x.x, 10.x.x.x, 172.16–31.x.x, Tailscale 100.64–127.x.x). Không có mật khẩu: đừng bật máy chủ ở Wi-Fi công cộng.
+5. Chỉ nối được IP mạng nội bộ (192.168.x.x, 10.x.x.x, 172.16–31.x.x, Tailscale 100.64–127.x.x). Sai mã 5 lần liền → máy kính khoá 60 giây. Người lạ không đá được điện thoại đang nối (phải đúng mã mới thay chỗ). Lộ mã thì bấm **Đổi mã** trên máy kính.
 
 **Đầu:** gật = OK / đặt màn đang cầm / bật-tắt bản đồ · lắc = bỏ qua.
 
@@ -230,6 +230,7 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Mở app khác 5 phút rồi quay lại: kính vẫn bám đầu (IMU chạy nền)
 - [ ] Trang Google đăng nhập: được không; nếu không, "Mở bằng Chrome" + chiếu màn hình
 - [ ] Beam đời đầu: app tự vào chế độ máy chủ; điện thoại "Điều khiển máy kính" tự tìm thấy (hoặc nhập IP)
+- [ ] Mã ghép đôi: nhập sai → điện thoại báo sai mã, kính hiện mã đúng; nhập đúng → nối; tắt Wi-Fi điện thoại → kính hiện lại mã
 - [ ] Beam: touchpad, 2 ngón về giữa, giữ để nói lệnh, gõ chữ vào ô tìm kiếm qua điện thoại
 - [ ] Nếu app crash: mở lại → Chẩn đoán có mục "LẦN CRASH GẦN NHẤT" → Copy gửi
 - [ ] Sau 15 phút dùng: máy nóng tới đâu, pin tụt bao nhiêu
@@ -278,11 +279,11 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 | # | Nợ | Mức | Trạng thái |
 | --- | --- | --- | --- |
 | 1 | USB/IMU nằm trong Activity → Android đóng màn điều khiển là mất tracking | Cao | **Đã trả (0.5)**: `Sensors` + service nền |
-| 2 | Chưa từng build thật; code Android chỉ được kiểm tra kiểu với thư viện giả (stub) | Cao | Còn — cần build lần đầu và sửa lỗi build |
+| 2 | Chưa từng build thật; code Android chỉ được kiểm tra kiểu với thư viện giả (stub) | Cao | **Đã trả**: build thật trên GitHub Actions từ 25/11/2026 |
 | 3 | Chưa chạy trên máy thật nào (điện thoại, Beam, Beam Pro) | Cao | Còn — làm theo mục 7 |
 | 4 | API key Jev / LLM lưu thường trong máy (SharedPreferences), chưa mã hoá | Trung bình | Còn — chuyển sang backend giữ key (mục 10) |
 | 5 | Cho phép HTTP không mã hoá (`usesCleartextTraffic`) để dùng Ollama trong mạng nhà | Trung bình | Còn — giới hạn bằng network-security-config chỉ cho IP nội bộ |
-| 6 | Điều khiển từ xa qua Wi-Fi chưa có mã ghép đôi / mật khẩu | Trung bình | Còn — thêm mã 4 số hiện trên kính |
+| 6 | Điều khiển từ xa qua Wi-Fi chưa có mã ghép đôi / mật khẩu | Trung bình | **Đã trả (0.5.1)**: mã 4 số, khoá 60 s sau 5 lần sai. Còn lại: dữ liệu chưa mã hoá (chỉ dùng trong Wi-Fi tin cậy) |
 | 7 | Đăng nhập Google trong WebView | Trung bình | Đã giảm (0.5): đổi UA + mở Chrome; chưa chắc hết |
 | 8 | Chưa có hướng dẫn lần đầu | Thấp | **Đã trả (0.5)**: thẻ Thiết lập lần đầu |
 | 9 | Chưa có icon, crash không ai biết | Thấp | **Đã trả (0.5)**: icon + crash log |
@@ -300,7 +301,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 - [ ] Đo pin / nhiệt sau 30 phút xem phim và 30 phút làm việc.
 
 **Code (Claude làm được không cần máy):**
-- [ ] Mã ghép đôi cho điều khiển từ xa.
+- [x] Mã ghép đôi cho điều khiển từ xa (0.5.1).
 - [ ] network-security-config: chỉ cho HTTP tới IP nội bộ.
 - [ ] Thông báo thật của điện thoại lên kính (NotificationListener), đọc / trả lời bằng giọng.
 - [ ] Bản đồ GPS thật thay tuyến giả; tự ẩn màn khi đi nhanh.
@@ -319,6 +320,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.5.1 | Mã ghép đôi 4 số cho điều khiển từ xa (khoá 60 s sau 5 lần sai, người lạ không đá được máy đang nối); APK build thật lần đầu trên GitHub Actions |
 | 25/11/2026 | repo | Gom về monorepo GitHub `jinergenkai/xreal-space`: `android/` (giữ lịch sử commit), `pc/`, `pythontest/`, wiki ở `docs/`; CI build APK + test Python |
 | 25/11/2026 | 0.5.0 | Điều khiển Beam đời đầu bằng điện thoại qua Wi-Fi; IMU/USB chạy nền ở cấp ứng dụng; thẻ Thiết lập lần đầu; crash log; sửa đăng nhập Google + Mở bằng Chrome; icon; script build Docker; wiki thêm giới hạn nền tảng, nợ kỹ thuật, checklist |
 | 25/11/2026 | 0.4.0 | Màn hình điện thoại vào một ô + mở app bằng giọng + bấm qua chấm ngắm (Trợ năng); kính chạy nền khi mở app khác; teleprompter theo giọng đọc; phụ đề Việt/Anh và phiên dịch Anh↔Việt |

@@ -341,7 +341,8 @@ class CoreTest {
 
     @Test fun remoteProtocolRoundTrips() {
         val msgs = listOf(
-            RemoteProtocol.Msg.Hello("Pixel 7"), RemoteProtocol.Msg.Pad(2, 12.5f, -3f), RemoteProtocol.Msg.TwoTap,
+            RemoteProtocol.Msg.Hello("Pixel 7"), RemoteProtocol.Msg.Hello("Pixel 7", 1, "0420"),
+            RemoteProtocol.Msg.Auth(true), RemoteProtocol.Msg.Auth(false, "Sai mã | thử lại"), RemoteProtocol.Msg.Pad(2, 12.5f, -3f), RemoteProtocol.Msg.TwoTap,
             RemoteProtocol.Msg.Swipe2(-80f, 4f), RemoteProtocol.Msg.Say("mở youtube | ô 5"), RemoteProtocol.Msg.Text(""),
             RemoteProtocol.Msg.Text("xin chào\nbạn"), RemoteProtocol.Msg.Enter, RemoteProtocol.Msg.Key("click"),
             RemoteProtocol.Msg.Focus("a|b"), RemoteProtocol.Msg.Blur, RemoteProtocol.Msg.Ping)
@@ -356,5 +357,21 @@ class CoreTest {
         assertTrue(RemoteProtocol.isLanAddress("10.0.0.5"))
         assertFalse(RemoteProtocol.isLanAddress("8.8.8.8"))
         assertFalse(RemoteProtocol.isLanAddress("evil.com"))
+    }
+
+    @Test fun pairingPinAndLockout() {
+        val pin = RemoteProtocol.newPin(Random(7))
+        assertEquals(4, pin.length); assertTrue(pin.all { it.isDigit() })
+        val g = PairingGuard("1234", maxFails = 3, lockMs = 60_000)
+        assertEquals(PairingGuard.Result.OK, g.check(" 1234 ", 0))
+        assertEquals(PairingGuard.Result.WRONG, g.check("0000", 1))
+        assertEquals(PairingGuard.Result.WRONG, g.check("123", 2))
+        assertEquals(PairingGuard.Result.LOCKED, g.check("12345", 3))      // 3rd wrong -> locked
+        assertEquals(PairingGuard.Result.LOCKED, g.check("1234", 10_000)) // even the right PIN, while locked
+        assertEquals(51L, g.secondsLocked(10_000))
+        assertEquals(PairingGuard.Result.OK, g.check("1234", 60_004))
+        assertEquals(PairingGuard.Result.WRONG, PairingGuard("").check("", 0)) // no PIN set = nobody gets in
+        // old phones (v0.5) send HELLO without a PIN -> decoded as empty PIN, rejected
+        assertEquals(RemoteProtocol.Msg.Hello("A", 1, ""), RemoteProtocol.decode("HELLO|A|1"))
     }
 }

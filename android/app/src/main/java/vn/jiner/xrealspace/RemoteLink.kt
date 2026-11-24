@@ -6,6 +6,7 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import vn.jiner.xrealspace.core.PairingGuard
 import vn.jiner.xrealspace.core.RemoteProtocol
 import vn.jiner.xrealspace.core.RemoteProtocol.Msg
 import java.io.BufferedReader
@@ -29,6 +30,12 @@ object RemoteLink {
     @Volatile var status = "tắt"; private set
     @Volatile var peerName = ""; private set
     val connected get() = writer != null
+
+    /** HOST: 4-digit code shown on the glasses; a phone must send it before any command is accepted */
+    var pin = ""; private set
+    private val guard = PairingGuard("")
+    private const val PREFS = "remote"
+    private const val HANDSHAKE_MS = 5000
 
     /** REMOTE side: the host asked to open / close the phone keyboard */
     var onFocus: ((String) -> Unit)? = null
@@ -57,6 +64,10 @@ object RemoteLink {
         if (role == Role.HOST) return
         stop()
         role = Role.HOST
+        val prefs = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        pin = prefs.getString("host_pin", null) ?: RemoteProtocol.newPin().also { prefs.edit().putString("host_pin", it).apply() }
+        guard.pin = pin
+        showPin()
         io.execute {
             try {
                 val ss = ServerSocket()
@@ -67,8 +78,7 @@ object RemoteLink {
                 main.post { announce(ctx) }
                 while (role == Role.HOST && !ss.isClosed) {
                     val s = ss.accept()
-                    closeSocket(null)                       // one remote at a time: the newest wins
-                    attach(s)
+                    io.execute { handshakeHost(s) }         // a stranger can't kick the paired phone off: PIN first
                 }
             } catch (e: Exception) { if (role == Role.HOST) set("lỗi máy chủ: ${e.message}") }
         }
@@ -76,6 +86,42 @@ object RemoteLink {
         SpaceState.remoteFocusSink = { v -> if (connected) { send(Msg.Focus(v)); true } else false }
         SpaceState.remoteBlurSink = { if (connected) { send(Msg.Blur); true } else false }
     }
+
+    /** HOST: first line must be HELLO with the right PIN, within 5 s. Only then replace the current phone. */
+    private fun handshakeHost(s: Socket) {
+        try {
+            s.soTimeout = HANDSHAKE_MS
+            val r = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
+            val w = PrintWriter(s.getOutputStream().bufferedWriter(Charsets.UTF_8), true)
+            val hello = RemoteProtocol.decode(r.readLine() ?: "") as? Msg.Hello
+            if (hello == null) { s.close(); return }
+            val res = synchronized(guard) { guard.check(hello.pin, System.currentTimeMillis()) }
+            if (res != PairingGuard.Result.OK) {
+                val why = if (res == PairingGuard.Result.LOCKED) "Sai mã nhiều lần — thử lại sau ${guard.secondsLocked(System.currentTimeMillis())} giây"
+                          else "Sai mã ghép đôi — xem mã 4 số trên kính"
+                w.println(RemoteProtocol.encode(Msg.Auth(false, why)))
+                SpaceState.log("remote: rejected ${s.inetAddress?.hostAddress} ($res)")
+                main.post { SpaceState.notify("Điều khiển từ xa", "${hello.name}: sai mã. Mã đúng: $pin", Colors.AMBER, 4.0) }
+                s.close(); return
+            }
+            w.println(RemoteProtocol.encode(Msg.Auth(true)))
+            s.soTimeout = 0
+            closeSocket(null)                               // one phone at a time: the newly paired one wins
+            attach(s, r)
+            main.post { apply(hello) }
+        } catch (e: Exception) { try { s.close() } catch (_: Exception) {} }
+    }
+
+    /** HOST: new code (the old one stops working for the next connection) */
+    fun newPin(ctx: Context) {
+        pin = RemoteProtocol.newPin()
+        guard.pin = pin
+        ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("host_pin", pin).apply()
+        showPin()
+        main.post { onChange?.invoke() }
+    }
+
+    private fun showPin() = main.post { SpaceState.notify("Mã ghép đôi", "Nhập $pin trên điện thoại để điều khiển", Colors.CYAN, 10.0) }
 
     private fun announce(ctx: Context) {
         val m = ctx.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -118,8 +164,11 @@ object RemoteLink {
 
     // ------------------------------------------------------------------ REMOTE
     /** Find a host on the Wi-Fi with NSD; connects to the first one found. */
-    fun discoverAndConnect(ctx: Context) {
+    private var pendingPin = ""
+
+    fun discoverAndConnect(ctx: Context, pin: String) {
         stop()
+        pendingPin = pin
         role = Role.REMOTE
         val m = ctx.applicationContext.getSystemService(Context.NSD_SERVICE) as NsdManager
         nsd = m
@@ -134,7 +183,7 @@ object RemoteLink {
                 m.resolveService(info, object : NsdManager.ResolveListener {
                     override fun onServiceResolved(r: NsdServiceInfo) {
                         @Suppress("DEPRECATION") val host = r.host?.hostAddress ?: return
-                        connect(host, r.port)
+                        connect(host, pendingPin, r.port)
                     }
                     override fun onResolveFailed(r: NsdServiceInfo, code: Int) { set("không phân giải được máy kính ($code)") }
                 })
@@ -149,7 +198,7 @@ object RemoteLink {
     }
 
     /** REMOTE: connect to a host by IP typed by the user (LAN addresses only). */
-    fun connect(host: String, port: Int = RemoteProtocol.PORT) {
+    fun connect(host: String, pin: String, port: Int = RemoteProtocol.PORT) {
         if (!RemoteProtocol.isLanAddress(host)) { set("chỉ nối IP trong mạng nội bộ (192.168.x.x, 10.x.x.x…)"); return }
         role = Role.REMOTE
         set("đang nối $host…")
@@ -158,8 +207,17 @@ object RemoteLink {
                 val s = Socket()
                 s.connect(InetSocketAddress(host, port), 4000)
                 s.tcpNoDelay = true
-                attach(s)
-                send(Msg.Hello(Build.MODEL))
+                s.soTimeout = HANDSHAKE_MS
+                val r = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
+                PrintWriter(s.getOutputStream().bufferedWriter(Charsets.UTF_8), true).println(RemoteProtocol.encode(Msg.Hello(Build.MODEL, pin = pin)))
+                val auth = RemoteProtocol.decode(r.readLine() ?: "") as? Msg.Auth
+                if (auth?.ok != true) {
+                    s.close()
+                    set(auth?.reason?.ifEmpty { null } ?: "máy kính không trả lời (bản app cũ?)")
+                    return@execute
+                }
+                s.soTimeout = 0
+                attach(s, r)
                 set("đã nối $host")
                 // speech recognized on this phone goes to the glasses box
                 Assistant.remoteSink = { text -> send(Msg.Say(text)) }
@@ -168,13 +226,12 @@ object RemoteLink {
     }
 
     // ------------------------------------------------------------------ shared
-    private fun attach(s: Socket) {
+    private fun attach(s: Socket, r: BufferedReader) {
         socket = s
         writer = PrintWriter(s.getOutputStream().bufferedWriter(Charsets.UTF_8), true)
         main.post { onChange?.invoke() }
         io.execute {
             try {
-                val r = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
                 while (true) {
                     val line = r.readLine() ?: break
                     val m = RemoteProtocol.decode(line) ?: continue
@@ -184,12 +241,16 @@ object RemoteLink {
                             is Msg.Focus -> onFocus?.invoke(m.value)
                             Msg.Blur -> onBlur?.invoke()
                             is Msg.Status -> peerName = m.text
+                            is Msg.Auth -> if (!m.ok) closeSocket(m.reason)
                             else -> {}
                         }
                     }
                 }
             } catch (_: Exception) {}
-            if (socket === s) closeSocket(if (role == Role.HOST) "điện thoại đã ngắt — chờ kết nối lại" else "mất kết nối")
+            if (socket === s) {
+                closeSocket(if (role == Role.HOST) "điện thoại đã ngắt — chờ kết nối lại" else "mất kết nối")
+                if (role == Role.HOST) showPin()
+            }
         }
     }
 
