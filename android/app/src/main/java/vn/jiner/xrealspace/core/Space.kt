@@ -30,10 +30,11 @@ data class SpaceConfig(
     var fovVDeg: Double = 23.5,
     var distanceM: Double = 2.0,
     var predictMs: Double = 15.0,
+    /** default: slots 5 (centre), 4 (left), 6 (right) of the 3x3 grid */
     val screens: MutableList<ScreenSpec> = mutableListOf(
-        ScreenSpec("Giữa", "https://www.google.com", 0.0),
-        ScreenSpec("Trái", "https://m.youtube.com", 40.0),
-        ScreenSpec("Phải", "https://www.openstreetmap.org", -40.0, widthM = 1.0),
+        SlotGrid.spec(5, "Google", "https://www.google.com"),
+        SlotGrid.spec(4, "YouTube", "https://m.youtube.com"),
+        SlotGrid.spec(6, "Bản đồ", "https://www.openstreetmap.org"),
     ),
     val map: MapSpec = MapSpec(),
 ) {
@@ -246,65 +247,130 @@ class MockRoute {
     }
 }
 
-/** Rule-based voice commands (vi + en). Placeholder for the "LLM function calling" layer. */
+/** Rule-based speech -> intent (vi + en, offline, free). Also the fallback when Jev/LLM are unavailable. */
 object VoiceCommands {
     sealed class Cmd {
         object Recenter : Cmd()
-        object WalkToggle : Cmd()
+        data class Walk(val on: Boolean?) : Cmd()
         data class Map(val on: Boolean?) : Cmd()
         object Farther : Cmd()
         object Closer : Cmd()
-        object HeadLockToggle : Cmd()
+        data class Size(val bigger: Boolean) : Cmd()
+        data class HeadLock(val on: Boolean?) : Cmd()
         object Calibrate : Cmd()
         object Notify : Cmd()
+        object Grab : Cmd()
+        object Summarize : Cmd()
+        object ShowGrid : Cmd()
+        data class Workspace(val name: String) : Cmd()
+        data class SaveWorkspace(val name: String) : Cmd()
+        /** put [url] into grid slot 1..9 */
+        data class Place(val slot: Int, val url: String, val title: String?) : Cmd()
+        /** slot 0 = the screen being looked at */
+        data class ClearSlot(val slot: Int) : Cmd()
+        /** panel = index in config.screens, null = the one being looked at */
         data class Open(val panel: Int?, val url: String) : Cmd()
+        /** a ready answer to show on the glasses */
+        data class Answer(val text: String) : Cmd()
+        /** a question to forward to the LLM */
+        data class Ask(val text: String) : Cmd()
         data class Unknown(val text: String) : Cmd()
     }
 
+    /** folded keyword -> url (longest keys first so "google map" wins over "google"). */
     private val SITES = linkedMapOf(
         "youtube" to "https://m.youtube.com",
         "google map" to "https://www.google.com/maps",
-        "ban do" to "https://www.openstreetmap.org",
+        "gmail" to "https://mail.google.com",
         "facebook" to "https://m.facebook.com",
         "tiktok" to "https://www.tiktok.com",
-        "gmail" to "https://mail.google.com",
-        "google" to "https://www.google.com",
+        "zalo" to "https://chat.zalo.me",
+        "github" to "https://github.com",
         "chatgpt" to "https://chatgpt.com",
         "claude" to "https://claude.ai",
+        "lich" to "https://calendar.google.com",
+        "calendar" to "https://calendar.google.com",
+        "spotify" to "https://open.spotify.com",
+        "bao" to "https://vnexpress.net",
+        "vnexpress" to "https://vnexpress.net",
+        "google" to "https://www.google.com",
     )
 
     fun fold(s: String): String {
         val n = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
-        return n.replace(Regex("\\p{M}+"), "").replace('đ', 'd').replace(Regex("\\s+"), " ").trim()
+        return n.replace(Regex("\\p{M}+"), "").replace('đ', 'd').replace(Regex("[^a-z0-9.:/ ]"), " ").replace(Regex("\\s+"), " ").trim()
     }
 
-    /** panels: 0 = giữa/center, 1 = trái/left, 2 = phải/right (matches default config order). */
+    fun siteFromText(folded: String): String? {
+        Regex("""\b([a-z0-9-]+\.(?:com|vn|net|org|io|ai|me|dev)(?:/\S*)?)""").find(folded)?.let { return "https://" + it.groupValues[1] }
+        return SITES.entries.firstOrNull { Regex("\\b" + Regex.escape(it.key) + "\\b").containsMatchIn(folded) }?.value
+    }
+
+    fun searchUrl(q: String) = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(q.trim(), "UTF-8")
+
+    private val COMMAND_WORDS = listOf(
+        "kinh oi", "nay kinh", "e kinh", "hey space", "tim kiem", "tim", "search", "google", "mo", "open", "dat", "vao", "len", "cho toi", "giup toi",
+        "o so", "slot", "trang", "web", "tren", "xem",
+    )
+
+    /** Remove trigger words and "ô N" so what is left is the search query. */
+    fun stripCommandWords(folded: String): String {
+        var t = " $folded "
+        t = t.replace(Regex("""\s(?:o|slot|so)\s+(?:so\s+)?(?:[1-9]|mot|hai|ba|bon|tu|nam|lam|sau|bay|tam|chin)\b"""), " ")
+        for (w in COMMAND_WORDS) t = t.replace(" $w ", " ")
+        return t.replace(Regex("\\s+"), " ").trim()
+    }
+
+    fun workspaceName(folded: String): String {
+        val m = Regex("""(?:khong gian|workspace|che do|bo cuc)\s+(.+)$""").find(folded)
+        return (m?.groupValues?.get(1) ?: folded).replace(Regex("""^(?:ten|la|so)\s+"""), "").trim()
+    }
+
     fun parse(text: String): Cmd {
         val t = fold(text)
-        fun has(vararg k: String) = k.any { t.contains(it) }
-        val panel = when {
-            has("ben trai", "left", "trai") -> 1
-            has("ben phai", "right", "phai") -> 2
-            has("o giua", "chinh giua", "center", "middle", "giua") -> 0
-            else -> null
+        fun has(vararg k: String) = k.any { Regex("(?:^|\\s)" + Regex.escape(it) + "(?:\\s|$)").containsMatchIn(t) }
+        val slot = SlotGrid.parseSlot(t)
+
+        // workspaces
+        if (has("luu khong gian", "luu bo cuc", "save workspace")) return Cmd.SaveWorkspace(workspaceName(t))
+        if (has("rap phim", "xem phim")) return Cmd.Workspace("giai tri")
+        if (has("khong gian", "workspace", "bo cuc")) return Cmd.Workspace(workspaceName(t))
+        if (has("hien so", "hien luoi", "luoi", "show grid", "cac o")) return Cmd.ShowGrid
+        // slots
+        if (slot != null && has("xoa", "dong", "tat", "bo", "clear", "close", "remove")) return Cmd.ClearSlot(slot)
+        if (slot != null) {
+            val site = siteFromText(t)
+            if (site != null) return Cmd.Place(slot, site, null)
+            val q = stripCommandWords(t)
+            if (q.isNotBlank()) return Cmd.Place(slot, searchUrl(q), q)
         }
-        if (has("mo ", "open ", "bat ")) {
-            for ((k, url) in SITES) if (t.contains(k)) {
-                if (k == "ban do" && !has("web", "trang")) break // "bật bản đồ" = HUD map
-                return Cmd.Open(panel, url)
-            }
+        if (has("xoa man", "dong man", "close screen")) return Cmd.ClearSlot(0)
+        // open / search on the focused screen
+        if (has("tim kiem", "tim", "search", "google")) {
+            val q = stripCommandWords(t)
+            if (q.isNotBlank() && siteFromText(t).let { it == null || it.endsWith("google.com") }) return Cmd.Open(null, searchUrl(q))
+        }
+        if (has("mo", "open", "bat")) {
+            val site = siteFromText(t)
+            if (site != null && !has("ban do")) return Cmd.Open(null, site)
         }
         return when {
             has("ve giua", "recenter", "dat lai", "center screen") -> Cmd.Recenter
-            has("di bo", "walk") -> Cmd.WalkToggle
+            has("tat di bo", "het di bo", "stop walk") -> Cmd.Walk(false)
+            has("di bo", "walk") -> Cmd.Walk(true)
             has("tat ban do", "an ban do", "hide map", "map off") -> Cmd.Map(false)
             has("bat ban do", "hien ban do", "mo ban do", "show map", "map on") -> Cmd.Map(true)
             has("ban do", "map") -> Cmd.Map(null)
+            has("tom tat", "summarize", "summary") -> Cmd.Summarize
+            has("to hon", "phong to", "bigger", "lon hon") -> Cmd.Size(true)
+            has("nho hon", "thu nho", "smaller") -> Cmd.Size(false)
             has("xa hon", "day ra", "farther", "further") -> Cmd.Farther
             has("gan hon", "keo lai", "closer") -> Cmd.Closer
-            has("khoa dau", "head lock", "theo dau") -> Cmd.HeadLockToggle
+            has("cam man", "di chuyen man", "grab", "keo man") -> Cmd.Grab
+            has("khoa dau", "head lock", "theo dau") -> Cmd.HeadLock(null)
             has("hieu chinh", "calibrate") -> Cmd.Calibrate
             has("thong bao", "notification") -> Cmd.Notify
+            text.trim().endsWith("?") || has("la gi", "bao nhieu", "the nao", "tai sao", "o dau", "khi nao", "what", "why", "how") -> Cmd.Ask(text)
             else -> Cmd.Unknown(text)
         }
     }

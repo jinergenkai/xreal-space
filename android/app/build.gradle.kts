@@ -30,5 +30,8 @@ android {
 }
 
 dependencies {
+    // Vosk: free offline speech recognition (Apache 2.0) — Vietnamese model downloaded at runtime
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     testImplementation("junit:junit:4.13.2")
 }

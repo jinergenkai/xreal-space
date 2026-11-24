@@ -16,9 +16,6 @@ import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.view.Display
 import android.view.Gravity
@@ -34,6 +31,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import vn.jiner.xrealspace.core.VoiceCommands
+import vn.jiner.xrealspace.core.WakeWord
 
 /** Shows the space on the glasses (an external display) while the phone stays the controller. */
 class SpacePresentation(ctx: Context, display: Display) : Presentation(ctx, display) {
@@ -51,7 +49,7 @@ class SpacePresentation(ctx: Context, display: Display) : Presentation(ctx, disp
     override fun onStop() { space.stop(); super.onStop() }
 }
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), SpaceState.Controller {
     private lateinit var usb: GlassesUsb
     private lateinit var phoneImu: PhoneImu
     private lateinit var dm: DisplayManager
@@ -69,7 +67,8 @@ class MainActivity : Activity() {
     private lateinit var urlField: EditText
     private lateinit var typeField: EditText
     private lateinit var backBtn: Button
-    private var speech: SpeechRecognizer? = null
+    private lateinit var voice: VoiceInput
+    private lateinit var aiStatus: TextView
 
     private val space: SpaceView? get() = phoneSpace ?: presentation?.space
 
@@ -90,6 +89,8 @@ class MainActivity : Activity() {
         usb = GlassesUsb(this) { ui.post { refreshStatus() } }
         phoneImu = PhoneImu(this)
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        voice = VoiceInput(this) { text -> handleUtterance(text) }
+        SpaceState.controller = this
         buildUi()
         usb.register()
         dm.registerDisplayListener(displayListener, ui)
@@ -110,11 +111,13 @@ class MainActivity : Activity() {
         if (wantGlassesOutput) showOnGlasses(quiet = true)
         phoneSpace?.start()
         ui.post(ticker)
+        if (SpaceState.wakeEnabled && hasMic()) voice.startWake()
     }
 
     override fun onStop() {
         started = false
         ui.removeCallbacks(ticker)
+        voice.stopWake()
         phoneSpace?.stop()
         presentation?.dismiss(); presentation = null
         SpaceState.save()
@@ -124,13 +127,14 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         dm.unregisterDisplayListener(displayListener)
         usb.unregister(); usb.close(); phoneImu.stop()
-        speech?.destroy()
+        voice.release()
+        if (SpaceState.controller === this) SpaceState.controller = null
         phoneSpace?.destroy()
         super.onDestroy()
     }
 
     private val ticker = object : Runnable {
-        override fun run() { refreshStatus(); ui.postDelayed(this, 300) }
+        override fun run() { refreshStatus(); if (voice.modelStatus.startsWith("đang")) refreshAi(); ui.postDelayed(this, 300) }
     }
 
     // ------------------------------------------------------------------ actions
@@ -185,47 +189,123 @@ class MainActivity : Activity() {
         backBtn.visibility = View.GONE
     }
 
-    private fun startVoice() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1); return
-        }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            SpaceState.notify("Giọng nói", "Máy không có dịch vụ nhận giọng nói (cần Google app)", Colors.RED); return
-        }
-        val sr = speech ?: SpeechRecognizer.createSpeechRecognizer(this).also { speech = it }
-        sr.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(b: Bundle) {
-                val text = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull() ?: return
-                SpaceState.log("voice: $text")
-                val cmd = VoiceCommands.parse(text)
-                if (cmd !is VoiceCommands.Cmd.Unknown) SpaceState.notify("🎤 $text", cmd.javaClass.simpleName, Colors.GREEN, 2.0)
-                SpaceState.execute(cmd)
+    // ------------------------------------------------------------------ voice + AI
+    private fun hasMic() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private var afterMicGrant: (() -> Unit)? = null
+
+    private fun withMic(action: () -> Unit) {
+        if (hasMic()) { action(); return }
+        afterMicGrant = action
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+    }
+
+    /** Push-to-talk (button, volume-key long press, keyboard V). */
+    private fun pushToTalk() = withMic { voice.captureCommand() }
+
+    private fun setWake(on: Boolean) {
+        SpaceState.wakeEnabled = on; SpaceState.saveSettings()
+        if (on) withMic {
+            voice.ensureModel { ok ->
+                if (ok) { voice.startWake(); SpaceState.notify("Từ đánh thức", "Nói \"${SpaceState.wakePhrases.first()}\" rồi ra lệnh", Colors.GREEN, 3.0) }
+                else SpaceState.notify("Từ đánh thức", "Không tải được model Vosk: ${voice.modelStatus}", Colors.RED, 4.0)
+                refreshAi()
             }
-            override fun onError(error: Int) { SpaceState.notify("Giọng nói", "Lỗi nhận dạng ($error)", Colors.RED, 2.0) }
-            override fun onReadyForSpeech(p: Bundle?) { SpaceState.notify("🎤 Đang nghe…", "Ví dụ: “mở YouTube bên trái”, “về giữa”, “tắt bản đồ”", Colors.CYAN, 5.0) }
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(v: Float) {}
-            override fun onBufferReceived(b: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onPartialResults(b: Bundle?) {}
-            override fun onEvent(t: Int, b: Bundle?) {}
-        })
-        sr.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
-        })
+        } else voice.stopWake()
+        refreshAi()
+    }
+
+    /** Speech text -> intent (rules / Jev / LLM) -> commands. Falls back to rules when the network engine fails. */
+    private fun handleUtterance(text: String) {
+        val st = SpaceState
+        st.log("voice: $text")
+        st.voiceHeard = text
+        val rules = VoiceCommands.parse(text)
+        fun runRules(prefix: String = "") {
+            if (rules !is VoiceCommands.Cmd.Unknown) st.notify("🎤 $text", prefix + label(rules), Colors.GREEN, 2.0)
+            st.execute(rules)
+        }
+        when (st.intentEngine) {
+            SpaceState.IntentEngine.RULES -> runRules()
+            SpaceState.IntentEngine.JEV -> {
+                if (!st.jevReady) { runRules("(chưa có key Jev) "); return }
+                st.voiceState = "thinking"
+                AiClient.jevCommand(text) { r ->
+                    st.voiceState = ""
+                    r.onSuccess { (cmd, d) ->
+                        st.log("jev: ${d.intent} %.2f site=${d.site} switch=${d.switch}".format(d.confidence))
+                        if (cmd is VoiceCommands.Cmd.Unknown && rules !is VoiceCommands.Cmd.Unknown) { runRules("(Jev không chắc) "); return@onSuccess }
+                        st.notify("🎤 $text", "Jev: ${d.intent} · %.0f%%".format(d.confidence * 100), Colors.GREEN, 2.0)
+                        st.execute(cmd)
+                    }.onFailure { e -> st.log("jev failed: ${AiClient.describe(e)}"); runRules("(Jev lỗi, dùng luật) ") }
+                }
+            }
+            SpaceState.IntentEngine.LLM -> {
+                if (!st.llmReady) { runRules("(chưa cấu hình LLM) "); return }
+                st.voiceState = "thinking"
+                AiClient.llmCommand(text) { r ->
+                    st.voiceState = ""
+                    r.onSuccess { reply ->
+                        if (reply.cmds.isEmpty()) { runRules(); return@onSuccess }
+                        st.notify("🎤 $text", reply.say ?: reply.cmds.joinToString(" → ") { label(it) }, Colors.GREEN, 2.5)
+                        reply.cmds.forEach { st.execute(it) }
+                    }.onFailure { e -> st.log("llm failed: ${AiClient.describe(e)}"); runRules("(LLM lỗi, dùng luật) ") }
+                }
+            }
+        }
+    }
+
+    private fun label(c: VoiceCommands.Cmd): String = when (c) {
+        is VoiceCommands.Cmd.Place -> "ô ${c.slot}: ${c.title ?: c.url}"
+        is VoiceCommands.Cmd.Open -> "mở ${c.url}"
+        is VoiceCommands.Cmd.ClearSlot -> if (c.slot == 0) "xoá màn đang nhìn" else "xoá ô ${c.slot}"
+        is VoiceCommands.Cmd.Workspace -> "không gian ${c.name}"
+        is VoiceCommands.Cmd.SaveWorkspace -> "lưu không gian ${c.name}"
+        else -> c.javaClass.simpleName
+    }
+
+    // SpaceState.Controller
+    override fun ask(question: String) {
+        val st = SpaceState
+        if (!st.llmReady) { st.notify("Trợ lý", "Cần cấu hình LLM (Cài đặt AI) để trả lời câu hỏi", Colors.AMBER, 3.0); return }
+        st.voiceState = "thinking"
+        AiClient.llmAsk(question) { r ->
+            st.voiceState = ""
+            r.onSuccess { st.showCard("❓ $question", it.trim()) }.onFailure { st.notify("Trợ lý lỗi", AiClient.describe(it), Colors.RED, 4.0) }
+        }
+    }
+
+    override fun summarizeFocused() {
+        val st = SpaceState
+        val web = space?.focusedWeb() ?: run { st.notify("Tóm tắt", "Không có màn nào", Colors.AMBER); return }
+        if (!st.llmReady) { st.notify("Tóm tắt", "Cần cấu hình LLM (Cài đặt AI)", Colors.AMBER, 3.0); return }
+        st.voiceState = "thinking"; st.voiceHeard = "tóm tắt trang"
+        web.evaluateJavascript("(function(){return (document.title||'')+'\\n'+(document.body?document.body.innerText:'').slice(0,15000);})()") { raw ->
+            val txt = try { org.json.JSONArray("[$raw]").getString(0) } catch (e: Exception) { raw ?: "" }
+            val title = txt.substringBefore('\n')
+            AiClient.llmSummarize(title, txt.substringAfter('\n')) { r ->
+                st.voiceState = ""
+                r.onSuccess { st.showCard("📄 ${title.take(60)}", it.trim(), 40.0) }.onFailure { st.notify("Tóm tắt lỗi", AiClient.describe(it), Colors.RED, 4.0) }
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
-        if (code == 1 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoice()
+        if (code == 1 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { afterMicGrant?.invoke() }
+        afterMicGrant = null
     }
 
     // ------------------------------------------------------------------ keys: volume = remote, BT keyboard = prototype hotkeys
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val st = SpaceState
         when (keyCode) {
-            KeyEvent.KEYCODE_VOLUME_UP -> { if (space?.clickAtGaze() != true) st.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0) }
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (event.repeatCount == 0) event.startTracking()
+                else if (event.repeatCount == 3) { volLongPressed = true; pushToTalk() }   // hold = push-to-talk
+            }
+            KeyEvent.KEYCODE_V -> pushToTalk()
+            KeyEvent.KEYCODE_G -> st.toggleGrab()
             KeyEvent.KEYCODE_VOLUME_DOWN -> st.recenter()
             KeyEvent.KEYCODE_R -> st.recenter()
             KeyEvent.KEYCODE_W -> st.toggleWalk()
@@ -244,8 +324,16 @@ class MainActivity : Activity() {
         return true
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
-        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) true else super.onKeyUp(keyCode, event)
+    private var volLongPressed = false
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            if (!volLongPressed && space?.clickAtGaze() != true) SpaceState.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0)
+            volLongPressed = false
+            return true
+        }
+        return if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) true else super.onKeyUp(keyCode, event)
+    }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
@@ -267,6 +355,22 @@ class MainActivity : Activity() {
             append("Hiển thị: $out · khoảng cách %.2f m · FOV %.1f°\n".format(st.config.distanceM, st.config.fovVDeg))
             append("Màn đang nhìn: ${st.config.screens.getOrNull(st.focusedPanel)?.title ?: "-"}")
             if (st.walkMode) append(" · ĐI BỘ"); if (st.headLocked) append(" · HEAD-LOCKED"); if (!st.showMap) append(" · tắt bản đồ")
+        }
+    }
+
+    private fun refreshAi() {
+        if (!::aiStatus.isInitialized) return
+        val st = SpaceState
+        aiStatus.text = buildString {
+            append("Hiểu lệnh: ${st.intentEngine}")
+            when (st.intentEngine) {
+                SpaceState.IntentEngine.JEV -> append(if (st.jevReady) " (key ✓)" else " (chưa có key → dùng luật)")
+                SpaceState.IntentEngine.LLM -> append(if (st.llmReady) " (${st.llmProvider} ${st.llmModel})" else " (chưa cấu hình → dùng luật)")
+                else -> {}
+            }
+            append("\nNhận giọng: ${st.sttEngine} · model Vosk: ${voice.modelStatus}")
+            append("\nTừ đánh thức: ${if (st.wakeEnabled) "BẬT" else "tắt"} (${st.wakePhrases.joinToString(" / ")})")
+            append("\nKhông gian đã lưu: ${st.savedWorkspaces.values.joinToString { it.title }.ifEmpty { "-" }}")
         }
     }
 
@@ -361,7 +465,70 @@ class MainActivity : Activity() {
             btn("Enter") { space?.typeText(typeField.text.toString(), true); typeField.setText("") }).apply {
             (getChildAt(0).layoutParams as LinearLayout.LayoutParams).weight = 2.5f
         })
-        col.addView(btn("🎤 Ra lệnh giọng nói") { startVoice() })
+
+        // ---------------------------------------------------------------- AI
+        col.addView(label("AI · giọng nói → lệnh"))
+        aiStatus = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12f; typeface = Typeface.MONOSPACE }
+        col.addView(aiStatus)
+        col.addView(row(btn("🎤 Nói lệnh") { pushToTalk() }, btn("Từ đánh thức bật/tắt") { setWake(!SpaceState.wakeEnabled) }))
+        col.addView(row(btn("Hiện lưới 9 ô") { SpaceState.showGrid(8.0) }, btn("Cầm / đặt màn") { SpaceState.toggleGrab() },
+            btn("Tóm tắt trang") { summarizeFocused() }))
+        val cmdField = EditText(this).apply { hint = "Gõ lệnh thử, vd: youtube ô 3"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY) }
+        col.addView(row(cmdField, btn("Chạy") { if (cmdField.text.isNotBlank()) handleUtterance(cmdField.text.toString()); cmdField.setText("") }).apply {
+            (getChildAt(0).layoutParams as LinearLayout.LayoutParams).weight = 3f
+        })
+        col.addView(TextView(this).apply {
+            text = "Ví dụ: \"YouTube ô 3\" · \"tìm thời tiết Sài Gòn ô 6\" · \"xoá ô 7\" · \"lưu không gian code\" · \"mở không gian code\" · " +
+                "\"về giữa\" · \"tóm tắt trang này\". Giữ nút âm lượng + = nói lệnh."
+            setTextColor(Colors.GREY); textSize = 12f
+        })
+
+        col.addView(label("Cài đặt AI"))
+        col.addView(TextView(this).apply { text = "Hiểu lệnh bằng:"; setTextColor(Colors.GREY); textSize = 12f })
+        col.addView(row(btn("Luật (offline)") { SpaceState.intentEngine = SpaceState.IntentEngine.RULES; SpaceState.saveSettings(); refreshAi() },
+            btn("Jev") { SpaceState.intentEngine = SpaceState.IntentEngine.JEV; SpaceState.saveSettings(); refreshAi() },
+            btn("LLM") { SpaceState.intentEngine = SpaceState.IntentEngine.LLM; SpaceState.saveSettings(); refreshAi() }))
+        col.addView(TextView(this).apply { text = "Nhận giọng nói bằng:"; setTextColor(Colors.GREY); textSize = 12f })
+        col.addView(row(btn("Vosk offline (free)") { SpaceState.sttEngine = SpaceState.SttEngine.VOSK; SpaceState.saveSettings(); voice.ensureModel { refreshAi() }; refreshAi() },
+            btn("Google (online)") { SpaceState.sttEngine = SpaceState.SttEngine.GOOGLE; SpaceState.saveSettings(); refreshAi() },
+            btn("Tải model Vosk") { voice.ensureModel { refreshAi() }; refreshAi() }))
+
+        fun field(hint: String, value: String, secret: Boolean = false) = EditText(this).apply {
+            this.hint = hint; setText(value); setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY); textSize = 13f
+            if (secret) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val wakeF = field("Từ đánh thức, cách nhau bằng |", SpaceState.wakePhrases.joinToString("|"))
+        val jevUrlF = field("Jev endpoint", SpaceState.jevBaseUrl)
+        val jevModelF = field("Jev model", SpaceState.jevModel)
+        val jevKeyF = field("Jev API key (OpenRouter hoặc TypeSafe)", SpaceState.jevKey, secret = true)
+        val llmUrlF = field("LLM endpoint", SpaceState.llmBaseUrl)
+        val llmModelF = field("LLM model", SpaceState.llmModel)
+        val llmKeyF = field("LLM API key (để trống nếu Ollama)", SpaceState.llmKey, secret = true)
+        col.addView(wakeF)
+        col.addView(TextView(this).apply { text = "Jev (TypeSafe, qua OpenRouter mặc định):"; setTextColor(Colors.GREY); textSize = 12f })
+        col.addView(jevUrlF); col.addView(jevModelF); col.addView(jevKeyF)
+        col.addView(TextView(this).apply { text = "LLM:"; setTextColor(Colors.GREY); textSize = 12f })
+        col.addView(row(
+            btn("Claude") {
+                SpaceState.llmProvider = "anthropic"; llmUrlF.setText("https://api.anthropic.com/v1/messages"); llmModelF.setText("claude-haiku-5-5")
+            },
+            btn("Ollama (LAN)") {
+                SpaceState.llmProvider = "openai"; llmUrlF.setText("http://192.168.1.10:11434/v1/chat/completions"); llmModelF.setText("qwen2.5:7b")
+            },
+            btn("OpenAI-compat") { SpaceState.llmProvider = "openai" },
+        ))
+        col.addView(llmUrlF); col.addView(llmModelF); col.addView(llmKeyF)
+        col.addView(btn("Lưu cài đặt AI") {
+            val st = SpaceState
+            st.wakePhrases = wakeF.text.toString().split("|").map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { WakeWord.DEFAULT_PHRASES }
+            st.jevBaseUrl = jevUrlF.text.toString().trim(); st.jevModel = jevModelF.text.toString().trim(); st.jevKey = jevKeyF.text.toString().trim()
+            st.llmBaseUrl = llmUrlF.text.toString().trim(); st.llmModel = llmModelF.text.toString().trim(); st.llmKey = llmKeyF.text.toString().trim()
+            if (st.llmBaseUrl.contains("anthropic.com")) st.llmProvider = "anthropic" else if (st.llmProvider == "anthropic") st.llmProvider = "openai"
+            st.saveSettings()
+            if (st.wakeEnabled) { voice.stopWake(); voice.startWake() }
+            st.notify("Đã lưu", "Cài đặt AI", Colors.GREEN, 1.5); refreshAi()
+        })
+        refreshAi()
 
         col.addView(label("Chẩn đoán (gửi phần này khi test Beam Pro)"))
         col.addView(row(btn("Làm mới") { refreshDiag() }, btn("Copy") {

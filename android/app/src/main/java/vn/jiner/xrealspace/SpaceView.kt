@@ -22,6 +22,7 @@ import vn.jiner.xrealspace.core.M3
 import vn.jiner.xrealspace.core.Mat3
 import vn.jiner.xrealspace.core.Placement
 import vn.jiner.xrealspace.core.Projection
+import vn.jiner.xrealspace.core.SlotGrid
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -84,6 +85,24 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     private val wizardText = TextView(ctx).apply {
         setTextColor(Colors.AMBER); textSize = 26f; gravity = Gravity.CENTER; setBackgroundColor(0xFF000000.toInt()); setPadding(30, 20, 30, 20)
     }
+    /** numbered markers for the 9 grid slots (shown while giving voice commands) */
+    private val slotLabels = Array(9) { i ->
+        TextView(ctx).apply {
+            text = "${i + 1}"; textSize = 40f; gravity = Gravity.CENTER; setTextColor(0xFF7FA8C8.toInt())
+            background = GradientDrawable().apply { setColor(0xFF000000.toInt()); setStroke(3, 0xFF2F5A7A.toInt()); cornerRadius = 16f }
+            visibility = INVISIBLE
+        }
+    }
+    private val card = TextView(ctx).apply {
+        setTextColor(Colors.WHITE); textSize = 18f; setPadding(28, 22, 28, 22); setLineSpacing(4f, 1.0f)
+        background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 18f }
+        visibility = GONE
+    }
+    private val voice = TextView(ctx).apply {
+        setTextColor(Colors.CYAN); textSize = 18f; setPadding(22, 10, 22, 10); gravity = Gravity.CENTER
+        background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 30f }
+        visibility = GONE
+    }
     private val follow = LazyFollow(SpaceState.config.map)
     private val gestures = HeadGestures()
     private var lastFrameNs = 0L
@@ -103,6 +122,9 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         addView(toastView, LayoutParams(ToastView.W, ToastView.H)); toastView.visibility = GONE
         addView(status, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(wizardText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        slotLabels.forEach { addView(it, LayoutParams(220, 124)); it.pivotX = 0f; it.pivotY = 0f }
+        addView(card, LayoutParams(820, LayoutParams.WRAP_CONTENT))
+        addView(voice, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(crosshair, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         crosshair.isClickable = false
         rebuildPanels()
@@ -164,6 +186,11 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             else Projection.camera(tracker.predicted(st.config.predictMs), M)
 
         val cfg = st.config
+        // carrying a screen with the head: it follows the gaze direction
+        cfg.screens.getOrNull(st.grabbedPanel)?.let { g ->
+            val (gy, gp) = Projection.yawPitch(C)
+            g.yaw = gy; g.pitch = gp
+        }
         // world-locked screens
         var best = -1; var bestD = Double.MAX_VALUE
         panels.forEachIndexed { i, p ->
@@ -194,7 +221,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         if (M != null && wz == null) {
             val g = gestures.update(Mat3.mulV(M, tracker.lastGyro), now)
             when (g) {
-                HeadGestures.Gesture.NOD -> {
+                HeadGestures.Gesture.NOD -> if (st.grabbedPanel >= 0) st.toggleGrab() else {
                     val t = st.toast
                     if (t != null && t.actionable) st.notify("Đã trả lời", "\"OK, 7h nhé!\"", Colors.GREEN, 2.5)
                     else st.setMap(null)
@@ -219,6 +246,43 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         if (t != null && System.currentTimeMillis() > t.until) st.toast = null
         toastView.show(st.toast)
         toastView.x = (w / 2f - ToastView.W / 2f); toastView.y = h * 0.30f
+
+        // slot numbers
+        val showGrid = System.currentTimeMillis() < st.gridUntil && wz == null && !st.walkMode
+        val used = cfg.screens.mapNotNull { SlotGrid.slotOf(it) }.toSet()
+        for (k in 1..9) {
+            val v = slotLabels[k - 1]
+            if (!showGrid) { hide(v); continue }
+            val P = Mat3.mul(Mat3.rotY(SlotGrid.yaw(k)), Mat3.rotX(SlotGrid.pitch(k)))
+            if (k in used) {
+                // small tag at the top-left corner of an occupied slot
+                val pl = Projection.place(C, P, cfg.distanceM, 0.18, w, h, cfg.fovVDeg)
+                val pw = Projection.place(C, P, cfg.distanceM, SlotGrid.width(k), w, h, cfg.fovVDeg)
+                layoutOn(v, pl.copy(cx = pw.cx - pw.widthPx / 2 + pl.widthPx / 2, cy = pw.cy - pw.widthPx * 9 / 32), 220.0, 124.0)
+                v.setTextColor(Colors.BORDER_FOCUS)
+            } else {
+                layoutOn(v, Projection.place(C, P, cfg.distanceM, 0.35, w, h, cfg.fovVDeg), 220.0, 124.0)
+                v.setTextColor(0xFF7FA8C8.toInt())
+            }
+        }
+        // assistant card (head-locked, lower centre)
+        if (System.currentTimeMillis() < st.cardUntil && st.cardText.isNotEmpty()) {
+            if (card.visibility != VISIBLE) card.visibility = VISIBLE
+            val txt = "${st.cardTitle}\n\n${st.cardText}"
+            if (card.text.toString() != txt) card.text = txt
+            card.x = w / 2f - 410f; card.y = h * 0.42f
+        } else if (card.visibility != GONE) card.visibility = GONE
+        // voice indicator
+        val vtext = when (st.voiceState) {
+            "listening" -> "🎤 Đang nghe… " + st.voiceHeard
+            "thinking" -> "✨ Đang hiểu: " + st.voiceHeard
+            else -> ""
+        }
+        if (vtext.isNotEmpty()) {
+            if (voice.visibility != VISIBLE) voice.visibility = VISIBLE
+            if (voice.text.toString() != vtext) voice.text = vtext
+            voice.x = (w - voice.width) / 2f; voice.y = h - voice.height - 30f
+        } else if (voice.visibility != GONE) voice.visibility = GONE
 
         status.visibility = if (st.showStatus && wz == null) VISIBLE else GONE
         if (status.visibility == VISIBLE) {

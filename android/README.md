@@ -19,7 +19,7 @@ Kotlin thuần, không AndroidX, không thư viện ngoài. UI dựng bằng cod
 | Wizard hiệu chỉnh trục 2 cử chỉ | ✅ (mặc định dùng sẵn ma trận đo được trên kính Air 2 hôm 23/11) |
 | Phím tắt Ctrl+Alt+… | ✅ bàn phím Bluetooth: R, W, M, N, F, H, C, B, ↑/↓, [ / ] (không cần Ctrl+Alt) |
 | Chuột theo màn đang nhìn | ✅ **chấm ngắm giữa kính + touchpad trên điện thoại** (chạm = click, kéo = cuộn) |
-| Giọng nói | ✅ bản đầu: SpeechRecognizer tiếng Việt + bộ luật đơn giản ("mở YouTube bên trái", "về giữa", "tắt bản đồ", "xa hơn"…). Lớp LLM gọi hàm để sau |
+| Giọng nói | ✅ xem mục **AI** bên dưới: từ đánh thức miễn phí, 3 bộ hiểu lệnh (luật / Jev / LLM), lưới 9 ô |
 | — | ➕ Nút âm lượng làm remote: **+ = click**, **− = về giữa** (nhẫn/remote Bluetooth gửi phím âm lượng cũng dùng được) |
 | — | ➕ Ghim màn mới ở hướng đang nhìn, xoá màn đang nhìn, đổi URL, back/forward/reload, gõ chữ vào ô trên trang |
 | — | ➕ Chế độ **cảm biến điện thoại**: test cả không gian trên điện thoại khi không có kính |
@@ -36,6 +36,42 @@ Với file ghi thật `my_motion.csv`, cách đó cho bias trục yaw ≈ **6°/
 Bản này: bỏ 0.3 s đầu, chỉ nhận bias trong cửa sổ đứng yên thật (động là đo lại), và tiếp tục tinh chỉnh mỗi khi đứng yên
 (đánh giá "đứng yên" theo độ dao động của gyro, nên bias sai không tự khoá việc sửa của chính nó). Có test chạy trên đoạn ghi thật.
 
+## AI: giọng nói → lệnh
+
+```
+mic ──► [Từ đánh thức "kính ơi"]  Vosk offline, grammar chỉ gồm cụm đánh thức + [unk]   (free, Apache 2.0)
+          │  hoặc: nút 🎤 / giữ nút âm lượng + / phím V
+          ▼
+     [Giọng nói → chữ]  Vosk offline tiếng Việt (free)  |  Google SpeechRecognizer (online)
+          ▼
+     [Chữ → lệnh]  Luật offline (free)  |  Jev (TypeSafe, phân loại có độ tin cậy)  |  LLM trả JSON (Claude / Ollama / OpenAI-compatible)
+          ▼            └─ Jev/LLM lỗi hoặc không chắc → tự quay về luật
+     SpaceState.execute(...)
+```
+
+- **Model Vosk tiếng Việt** `vosk-model-small-vn-0.4` (~32 MB) tự tải lần đầu từ alphacephei.com rồi chạy offline.
+- **Jev** chỉ trả lựa chọn kèm xác suất, không sinh chữ: app hỏi 3 câu `choice` (intent / site / bật-tắt), còn URL, từ khoá
+  tìm kiếm, tên không gian lấy từ câu nói bằng luật. Mặc định gọi qua OpenRouter `https://openrouter.ai/api/alpha/decisions`
+  (model `typesafe/jev-1.13`); TypeSafe trực tiếp là `https://api.typesafe.ai/v1/systemone` (model `jev-latest`).
+  Không có gói free, nhưng ~0.042 USD / 1 triệu token vào, output miễn phí.
+- **LLM** nhận danh sách hàm và trả `{"actions":[...],"say":"..."}`, làm được lệnh nhiều bước và trả lời câu hỏi.
+  Ollama trong mạng LAN: chọn "Ollama (LAN)", sửa IP máy chạy Ollama (app cho phép http trong bản test).
+- **Tóm tắt trang đang nhìn** và **trả lời câu hỏi** hiện thành thẻ trên kính (cần LLM).
+- Có ô **"Gõ lệnh thử"** để test bộ hiểu lệnh không cần mic.
+
+### Lưới 9 ô
+
+```
+ 1 2 3     ← nhìn lên
+ 4 5 6     ← nhìn thẳng (5 = chính diện)
+ 7 8 9     ← nhìn xuống
+```
+
+"YouTube ô 3", "đặt Gmail vào ô năm", "tìm thời tiết Sài Gòn ô 6", "xoá ô 7", "hiện lưới".
+Khi đang nghe lệnh, kính hiện số trên các ô (ô trống màu xanh, ô có trang màu vàng).
+"Lưu không gian code" lưu bộ ô hiện tại; "mở không gian code" bày lại. Dựng sẵn: làm việc, code, giải trí (rạp phim), họp.
+"Cầm màn" / phím G: màn đang nhìn đi theo đầu, gật đầu để đặt xuống.
+
 ## Build APK
 
 Cần JDK 17 + Android SDK (API 35). Chọn một cách:
@@ -51,7 +87,8 @@ Cần JDK 17 + Android SDK (API 35). Chọn một cách:
 
 Cài: `adb install -r app-debug.apk` (hoặc copy APK sang máy rồi mở).
 
-Test lõi (giao thức, tracker, wizard, bản đồ, giọng nói): `gradlew test` — 13 test, có 1 test chạy trên 4 giây dữ liệu Air 2 thật.
+Test lõi (giao thức, tracker, wizard, bản đồ, lưới 9 ô, luật/Jev/LLM parsing, từ đánh thức): `gradlew test` — 17 test,
+có 1 test chạy trên 4 giây dữ liệu Air 2 thật.
 
 ## Kịch bản test trên Beam Pro
 
@@ -67,7 +104,8 @@ Mục tiêu số 1 là trả lời 2 câu: **app có đọc được IMU không*
 4. Quay đầu trái/phải: màn hình phải **đứng yên trong không gian**. Bấm **Về giữa** (hoặc nút âm lượng −) để đặt lại.
 5. Nhìn chấm ngắm vào một trang web, dùng touchpad: chạm = click, kéo = cuộn. Thử gõ chữ vào ô tìm kiếm.
 6. Thử gật đầu (bật/tắt bản đồ), **Thông báo mẫu** rồi gật = OK / lắc = bỏ qua.
-7. Thử **🎤 Ra lệnh giọng nói**: "mở YouTube bên trái", "tắt bản đồ", "về giữa".
+7. AI: gõ thử "YouTube ô 3" vào ô **Gõ lệnh thử** → **Chạy**. Rồi **🎤 Nói lệnh** (lần đầu tải model Vosk ~32 MB).
+   Bật **Từ đánh thức** rồi nói "kính ơi" → "Gmail ô 4". Muốn dùng Jev/LLM: điền key trong **Cài đặt AI** → **Lưu**.
 8. Kéo xuống **Chẩn đoán** → **Copy** → dán vào chat. Kèm ghi chú: bước nào được, bước nào không.
 
 Trên điện thoại thường không xuất hình được qua USB-C (như Redmi 13C): vẫn test được bước 2 (đọc IMU) rồi dùng
@@ -80,7 +118,10 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 |---|---|
 | `core/Protocol.kt` | Lệnh bật/tắt luồng IMU (CRC32), parse gói 64 byte, bảng model (Air/Air 2/Air 2 Pro/Ultra) |
 | `core/ImuTracker.kt` | Bộ lọc hướng (SO(3) + Mahony + dự đoán), calibrate bias kiểu mới |
-| `core/Space.kt` | Cấu hình, phép chiếu, lazy-follow, gật/lắc, wizard trục, tuyến đường giả, lệnh giọng nói |
+| `core/Space.kt` | Cấu hình, phép chiếu, lazy-follow, gật/lắc, wizard trục, tuyến đường giả, luật hiểu lệnh |
+| `core/Features.kt` | Lưới 9 ô, không gian lưu sẵn, giao thức Jev + LLM, từ đánh thức, JSON parser nhỏ |
+| `AiClient.kt` | Gọi Jev / Claude / OpenAI-compatible (luồng nền) |
+| `VoiceInput.kt` | Vosk (tải model, từ đánh thức, nhận lệnh offline) + Google STT |
 | `GlassesUsb.kt` | Tìm kính, xin quyền, claim interface, luồng đọc, mô tả USB cho chẩn đoán |
 | `PhoneImu.kt` | Nguồn IMU dự phòng từ gyro/gia tốc của điện thoại |
 | `SpaceView.kt` | Cảnh không gian: WebView world-locked, bản đồ, HUD, chấm ngắm, chuyển chạm từ touchpad |

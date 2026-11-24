@@ -173,12 +173,87 @@ class CoreTest {
     }
 
     @Test fun voiceCommands() {
-        assertEquals(VoiceCommands.Cmd.Open(1, "https://m.youtube.com"), VoiceCommands.parse("Mở YouTube bên trái"))
+        assertEquals(VoiceCommands.Cmd.Open(null, "https://m.youtube.com"), VoiceCommands.parse("Mở YouTube"))
         assertEquals(VoiceCommands.Cmd.Map(false), VoiceCommands.parse("tắt bản đồ"))
         assertEquals(VoiceCommands.Cmd.Map(true), VoiceCommands.parse("bật bản đồ"))
         assertEquals(VoiceCommands.Cmd.Recenter, VoiceCommands.parse("đưa màn hình về giữa"))
-        assertEquals(VoiceCommands.Cmd.WalkToggle, VoiceCommands.parse("chế độ đi bộ"))
+        assertEquals(VoiceCommands.Cmd.Walk(true), VoiceCommands.parse("chế độ đi bộ"))
+        assertEquals(VoiceCommands.Cmd.Summarize, VoiceCommands.parse("tóm tắt trang này"))
+        assertTrue(VoiceCommands.parse("thủ đô của Pháp là gì") is VoiceCommands.Cmd.Ask)
         assertTrue(VoiceCommands.parse("hello world") is VoiceCommands.Cmd.Unknown)
+    }
+
+    @Test fun nineSlotGrid() {
+        assertEquals(5, SlotGrid.parseSlot(VoiceCommands.fold("ô 5")))
+        assertEquals(3, SlotGrid.parseSlot(VoiceCommands.fold("đặt vào ô ba")))
+        assertEquals(9, SlotGrid.parseSlot(VoiceCommands.fold("slot nine")))
+        assertEquals(7, SlotGrid.parseSlot(VoiceCommands.fold("màn số 7")))
+        assertNull(SlotGrid.parseSlot(VoiceCommands.fold("ở đâu")))
+        assertEquals(VoiceCommands.Cmd.Place(3, "https://m.youtube.com", null), VoiceCommands.parse("YouTube ô 3"))
+        assertEquals(VoiceCommands.Cmd.Place(5, "https://mail.google.com", null), VoiceCommands.parse("đặt Gmail vào ô năm"))
+        val q = VoiceCommands.parse("tìm thời tiết Sài Gòn ô 6") as VoiceCommands.Cmd.Place
+        assertEquals(6, q.slot); assertTrue(q.url, q.url.contains("thoi+tiet+sai+gon"))
+        assertEquals(VoiceCommands.Cmd.ClearSlot(7), VoiceCommands.parse("xoá ô 7"))
+        assertEquals(VoiceCommands.Cmd.ShowGrid, VoiceCommands.parse("hiện lưới"))
+        assertEquals(VoiceCommands.Cmd.SaveWorkspace("code"), VoiceCommands.parse("lưu không gian code"))
+        assertEquals(VoiceCommands.Cmd.Workspace("code"), VoiceCommands.parse("mở không gian code"))
+        assertEquals(VoiceCommands.Cmd.Workspace("giai tri"), VoiceCommands.parse("chế độ rạp phim"))
+        // layout geometry: keypad order, 5 = straight ahead
+        assertEquals(0.0, SlotGrid.yaw(5), 0.0); assertEquals(0.0, SlotGrid.pitch(5), 0.0)
+        assertTrue(SlotGrid.yaw(1) > 0 && SlotGrid.pitch(1) > 0)   // top-left
+        assertTrue(SlotGrid.yaw(9) < 0 && SlotGrid.pitch(9) < 0)   // bottom-right
+        assertEquals(4, SlotGrid.nearest(40.0, 2.0))
+        assertEquals(6, SlotGrid.slotOf(SlotGrid.spec(6, "x", "y")))
+        assertEquals("Code", Workspaces.find("code")!!.title)
+        val saved = mapOf("doc bao" to Workspaces.Workspace("doc bao", "Đọc báo", emptyList(), 2.0, false))
+        assertEquals("Đọc báo", Workspaces.find("đọc báo", saved)!!.title)
+    }
+
+    @Test fun wakeWord() {
+        assertTrue(WakeWord.matches("kính ơi", WakeWord.DEFAULT_PHRASES))
+        assertFalse(WakeWord.matches("[unk]", WakeWord.DEFAULT_PHRASES))
+        assertEquals("mở youtube ô 3", WakeWord.remainder("kính ơi mở youtube ô 3", WakeWord.DEFAULT_PHRASES))
+        assertEquals("""["kính ơi","[unk]"]""", WakeWord.voskGrammar(listOf("Kính ơi")))
+    }
+
+    @Test fun llmReplyParsing() {
+        val text = """Sure! ```json
+            {"actions":[{"fn":"place","slot":3,"url":"https://m.youtube.com","title":"YouTube"},
+                        {"fn":"map","on":false},{"fn":"search","query":"giá vàng","slot":6},{"fn":"answer","text":"Paris \"là\" thủ đô"}],
+             "say":"Đã đặt YouTube ở ô 3"}```"""
+        val r = LlmProtocol.parseReply(text)
+        assertEquals("Đã đặt YouTube ở ô 3", r.say)
+        assertEquals(VoiceCommands.Cmd.Place(3, "https://m.youtube.com", "YouTube"), r.cmds[0])
+        assertEquals(VoiceCommands.Cmd.Map(false), r.cmds[1])
+        assertEquals(6, (r.cmds[2] as VoiceCommands.Cmd.Place).slot)
+        assertEquals(VoiceCommands.Cmd.Answer("Paris \"là\" thủ đô"), r.cmds[3])
+        // plain prose -> shown as an answer
+        assertTrue(LlmProtocol.parseReply("Xin chào") .cmds[0] is VoiceCommands.Cmd.Answer)
+        // request bodies are valid JSON and keep unicode
+        val body = MiniJson.parse(LlmProtocol.anthropicBody("m", "sys \"q\"\n", "mở ô 3")) as Map<*, *>
+        assertEquals("mở ô 3", ((body["messages"] as List<*>)[0] as Map<*, *>)["content"])
+        assertEquals("hi", LlmProtocol.responseText("""{"content":[{"type":"text","text":"hi"}]}"""))
+        assertEquals("yo", LlmProtocol.responseText("""{"choices":[{"message":{"role":"assistant","content":"yo"}}]}"""))
+    }
+
+    @Test fun jevDecisionToCommand() {
+        val body = MiniJson.parse(JevProtocol.requestBody("typesafe/jev-1.13", "YouTube ô 3")) as Map<*, *>
+        val qs = body["questions"] as Map<*, *>
+        assertEquals("choice", (qs["intent"] as Map<*, *>)["type"])
+        assertTrue(((qs["intent"] as Map<*, *>)["criteria"] as Map<*, *>).containsKey("place"))
+        assertEquals("YouTube ô 3", (body["state"] as Map<*, *>)["utterance"])
+        // response shape from the OpenRouter Decisions API docs
+        val resp = """{"id":"gen-dec-1","model":"typesafe/jev-1.13-20260917","answers":{
+            "intent":{"type":"choice","choice":"place","confidence":0.82,"probabilities":{"place":0.9,"open":0.1}},
+            "site":{"type":"choice","choice":"youtube","confidence":0.9},
+            "switch":{"type":"choice","choice":"toggle","confidence":0.5}},"usage":{"input_tokens":476}}"""
+        val d = JevProtocol.parseDecision(resp)!!
+        assertEquals("place", d.intent); assertEquals(0.82, d.confidence, 1e-9); assertEquals("youtube", d.site)
+        assertEquals(VoiceCommands.Cmd.Place(3, "https://m.youtube.com", "youtube"), JevProtocol.toCmd(d, "YouTube ô 3"))
+        assertEquals(VoiceCommands.Cmd.Map(false), JevProtocol.toCmd(JevProtocol.Decision("map", 0.9, "other", "off"), "tắt bản đồ"))
+        assertTrue(JevProtocol.toCmd(JevProtocol.Decision("place", 0.2, null, null), "x") is VoiceCommands.Cmd.Unknown)
+        val s = JevProtocol.toCmd(JevProtocol.Decision("search", 0.9, "other", null), "tìm giá vàng hôm nay") as VoiceCommands.Cmd.Open
+        assertTrue(s.url, s.url.endsWith("q=gia+vang+hom+nay"))
     }
 
     @Test fun mockRouteWalks() {
