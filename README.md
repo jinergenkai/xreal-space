@@ -10,6 +10,6 @@ Dùng để xem phim, làm việc và tiện ích khi di chuyển.
 | [`pythontest/`](pythontest/) | xr-air-lab: thư viện Python đọc IMU kính, tài liệu giao thức USB, test |
 | [`docs/WIKI.md`](docs/WIKI.md) | **Wiki**: tính năng, hướng dẫn, kiến trúc, giới hạn, nợ kỹ thuật, checklist |
 
-**Lấy APK:** tab *Actions* → workflow `android-apk` → lần chạy mới nhất → *Artifacts*.
+**Lấy APK:** codemagic.io → app `xreal-space` → build mới nhất → *Artifacts* (cấu hình ở `codemagic.yaml`). GitHub Actions cũng có workflow nhưng tài khoản đang bị khoá billing.
 
 Repo private. Tên "XREAL" là thương hiệu của XREAL; dự án không liên quan tới hãng.

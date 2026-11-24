@@ -21,7 +21,8 @@ Mã nguồn: repo GitHub private **`jinergenkai/xreal-space`** (monorepo). Trên
 | `pythontest/` | xr-air-lab: PoC Python đọc IMU, tài liệu giao thức, test | Giữ tham khảo; test chạy trên CI |
 | `docs/WIKI.md` | Wiki duy nhất của dự án (file này) | — |
 
-Build APK: **GitHub Actions tự build mỗi lần push vào `android/`** → tab Actions → lần chạy mới nhất → Artifacts → `xreal-space-debug-apk`.
+Build APK: **Codemagic** (`codemagic.yaml`, free 500 phút/tháng, không cần thẻ) tự build mỗi lần push vào `android/` → codemagic.io → build mới nhất → Artifacts.
+GitHub Actions (`.github/workflows/`) cũng có sẵn nhưng đang không chạy: tài khoản GitHub bị khoá billing (thẻ bị từ chối khi xác minh, 11/2026).
 Hoặc Android Studio (mở thư mục `android/`), hoặc Docker (`android/scripts/build-apk.sh`). Chi tiết ở `android/README.md`.
 
 ## 2. Danh sách tính năng
