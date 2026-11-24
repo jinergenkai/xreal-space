@@ -1,0 +1,46 @@
+{
+  "imu_to_cam": [
+    [
+      -0.99936,
+      0.03481,
+      -0.00798
+    ],
+    [
+      -0.00141,
+      0.1848,
+      0.98277
+    ],
+    [
+      0.03569,
+      0.98216,
+      -0.18464
+    ]
+  ],
+  "fov_v_deg": 23.5,
+  "distance_m": 2.0,
+  "predict_ms": 15,
+  "screens": [
+    {
+      "source": "monitor",
+      "match": "primary",
+      "yaw": 0,
+      "pitch": 0,
+      "width_m": 1.2
+    },
+    {
+      "source": "monitor",
+      "match": "secondary",
+      "yaw": -40,
+      "pitch": 0,
+      "width_m": 1.2
+    },
+    {
+      "source": "window",
+      "match": "auto",
+      "yaw": 40,
+      "pitch": 0,
+      "width_m": 1.0
+    }
+  ],
+  "map": {}
+}

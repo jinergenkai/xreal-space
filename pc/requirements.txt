@@ -1,0 +1,6 @@
+pygame-ce
+moderngl
+numpy
+mss
+dxcam
+pywin32

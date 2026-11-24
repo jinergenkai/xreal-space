@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+calibration.json
+*.csv
+!tools/sample_head_motion.csv

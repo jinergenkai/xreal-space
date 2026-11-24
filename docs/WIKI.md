@@ -12,14 +12,17 @@ XREAL Space là app Android tự viết cho kính XREAL Air 2: đọc IMU kính 
 Trạng thái: code đã có, test lõi chạy qua, **chưa build APK và chưa chạy trên kính thật** (bản Android).
 Bản PC Python đã test trên kính thật ngày 23/11/2026.
 
-| Thư mục trong `D:\project\xreal-space` | Là gì | Trạng thái |
-| --- | --- | --- |
-| `xreal-space-android\` | App Android (Kotlin), bản chính | Code xong, chờ build |
-| `xreal-space-android.zip` | Như trên + file build tự động GitHub Actions | Dùng khi build trên GitHub |
-| `xreal-spatial-prototype\` | Prototype PC: 3 màn hình desktop, HUD, bản đồ | Đã test trên kính thật |
-| `xr-air-lab\` | PoC Python đọc IMU, giao thức | Cũ, giữ tham khảo |
+Mã nguồn: repo GitHub private **`jinergenkai/xreal-space`** (monorepo). Trên máy: `git clone` về `D:\project\xreal-space\xreal-space`.
 
-Build APK: Android Studio (mở thư mục → Run), Docker trên server (`mingc/android-build-box`), hoặc GitHub Actions. Lệnh ở `README.md`.
+| Thư mục | Là gì | Trạng thái |
+| --- | --- | --- |
+| `android/` | App Android (Kotlin), bản chính | Code xong, chờ build |
+| `pc/` | Prototype PC (Python): 3 màn hình desktop, HUD, bản đồ | Đã test trên kính thật |
+| `pythontest/` | xr-air-lab: PoC Python đọc IMU, tài liệu giao thức, test | Giữ tham khảo; test chạy trên CI |
+| `docs/WIKI.md` | Wiki duy nhất của dự án (file này) | — |
+
+Build APK: **GitHub Actions tự build mỗi lần push vào `android/`** → tab Actions → lần chạy mới nhất → Artifacts → `xreal-space-debug-apk`.
+Hoặc Android Studio (mở thư mục `android/`), hoặc Docker (`android/scripts/build-apk.sh`). Chi tiết ở `android/README.md`.
 
 ## 2. Danh sách tính năng
 
@@ -70,7 +73,7 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Ổn định | Thẻ "Thiết lập lần đầu" (✓/✗ từng quyền + nút mở cài đặt), nhắc Tự khởi chạy trên Xiaomi/Oppo/Vivo | Chờ test | 0.5 |
 | Ổn định | Ghi crash vào máy, hiện trong Chẩn đoán → Copy gửi lại | Chờ test | 0.5 |
 | Web | Sửa đăng nhập Google (UA không còn "wv") + nút "Mở bằng Chrome" cho trang chặn WebView | Chờ test | 0.5 |
-| Khác | Icon app; script build APK bằng Docker (`scripts/build-apk.sh`) | Chờ build | 0.5 |
+| Khác | Icon app; script build APK bằng Docker (`android/scripts/build-apk.sh`) | Chờ build | 0.5 |
 | Chưa | Thông báo thật của điện thoại hiện trên kính, trả lời bằng giọng | Chưa | — |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
@@ -199,8 +202,8 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 | `Sensors.kt` | Giữ GlassesUsb + PhoneImu ở cấp ứng dụng; bật service nền khi có kính |
 | `core/Remote.kt` · `RemoteLink.kt` | Giao thức điều khiển từ xa (1 dòng / lệnh) · máy chủ TCP + NSD trên Beam, client trên điện thoại |
 | `CrashLog.kt` | Ghi lần crash gần nhất vào máy |
-| `scripts/build-apk.sh` | Build APK bằng Docker, không cần Android Studio |
-| `app/src/test/.../CoreTest.kt` | 23 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
+| `android/scripts/build-apk.sh` | Build APK bằng Docker, không cần Android Studio |
+| `android/app/src/test/.../CoreTest.kt` | 23 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
 
 ## 7. Checklist test trên Beam Pro / điện thoại
 
@@ -289,7 +292,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 ## 10. Checklist việc cần làm
 
 **Hùng (cần máy / người):**
-- [ ] Build APK lần đầu: `./scripts/build-apk.sh` trên server có Docker (hoặc Android Studio / GitHub Actions). Lỗi build → gửi log.
+- [ ] Build APK lần đầu: `android/scripts/build-apk.sh` trên server có Docker (hoặc Android Studio / GitHub Actions). Lỗi build → gửi log.
 - [ ] Cài lên điện thoại có DP Alt Mode, chạy mục 7 (checklist test), gửi lại thẻ Chẩn đoán (nút Copy).
 - [ ] Cài lên Beam đời đầu, thử điều khiển từ xa bằng điện thoại; xem Beam có giữ cổng IMU không.
 - [ ] Hỏi anh Khoa: có Beam Pro không? Ưu tiên máy nào? Điện thoại nào sẽ dùng chính?
@@ -315,6 +318,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | repo | Gom về monorepo GitHub `jinergenkai/xreal-space`: `android/` (giữ lịch sử commit), `pc/`, `pythontest/`, wiki ở `docs/`; CI build APK + test Python |
 | 25/11/2026 | 0.5.0 | Điều khiển Beam đời đầu bằng điện thoại qua Wi-Fi; IMU/USB chạy nền ở cấp ứng dụng; thẻ Thiết lập lần đầu; crash log; sửa đăng nhập Google + Mở bằng Chrome; icon; script build Docker; wiki thêm giới hạn nền tảng, nợ kỹ thuật, checklist |
 | 25/11/2026 | 0.4.0 | Màn hình điện thoại vào một ô + mở app bằng giọng + bấm qua chấm ngắm (Trợ năng); kính chạy nền khi mở app khác; teleprompter theo giọng đọc; phụ đề Việt/Anh và phiên dịch Anh↔Việt |
 | 24/11/2026 | 0.3.0 | Touchpad toàn màn hình; tự kết nối / tự chiếu; bàn phím điện thoại + đọc chính tả; YouTube toàn màn hình (rạp phim); web tối; 3 chế độ Cố định / Rạp phim / Di chuyển; luật chạy trước Jev/LLM; tạm dừng màn khuất; wiki |

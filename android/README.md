@@ -1,6 +1,6 @@
 # XREAL Space — Android test build (Beam Pro / điện thoại Android)
 
-> **Wiki đầy đủ (danh sách tính năng, cử chỉ, lệnh giọng nói, checklist test, nhật ký phiên bản): [`docs/WIKI.md`](docs/WIKI.md).**
+> **Wiki đầy đủ (danh sách tính năng, cử chỉ, lệnh giọng nói, checklist test, nhật ký phiên bản): [`docs/WIKI.md`](../docs/WIKI.md) (ở gốc repo).**
 > README này chỉ giữ phần build và cấu trúc.
 
 Bản port Android của prototype Python `xreal-spatial-prototype` (23/11/2026). Mục tiêu: kiểm chứng trên
