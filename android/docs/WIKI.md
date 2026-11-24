@@ -1,7 +1,7 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.4.0 · bản online (có thể mất cùng tài khoản Claude): https://claude.ai/artifact/4wwyRLcWBM7DaLJWWfwouB
-File này là bản gốc nằm trong repo. Sửa ở đây trước.
+Cập nhật: 25/11/2026 · bản 0.4.0
+Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
 
