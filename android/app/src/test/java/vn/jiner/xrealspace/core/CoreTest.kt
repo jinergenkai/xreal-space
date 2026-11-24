@@ -256,6 +256,34 @@ class CoreTest {
         assertTrue(s.url, s.url.endsWith("q=gia+vang+hom+nay"))
     }
 
+    @Test fun followModes() {
+        val b = BodyFollow()
+        assertEquals(0.0, Projection.yawPitch(b.update(Mat3.rotY(30.0), FollowMode.WORLD, 0.016)).first, 1e-9)
+        // travel: a 15 deg turn stays inside the dead zone, a 90 deg turn (bus turning a corner) is followed
+        b.update(Mat3.eye(), FollowMode.TRAVEL, 0.016)
+        repeat(200) { b.update(Mat3.rotY(15.0), FollowMode.TRAVEL, 0.016) }
+        assertEquals(0.0, b.yaw, 1e-9)
+        repeat(600) { b.update(Mat3.rotY(90.0), FollowMode.TRAVEL, 0.016) }
+        assertEquals(90.0 - FollowMode.TRAVEL.deadzoneDeg, b.yaw, 0.5)
+        // cinema: lying back 40 deg -> the screen comes up to within the dead zone
+        val c = BodyFollow()
+        c.update(Mat3.eye(), FollowMode.CINEMA, 0.016)
+        repeat(1500) { c.update(Mat3.rotX(40.0), FollowMode.CINEMA, 0.016) }
+        assertEquals(40.0 - FollowMode.CINEMA.deadzoneDeg * 0.7, c.pitch, 0.5)
+        assertEquals(FollowMode.CINEMA, FollowMode.WORLD.next())
+        assertEquals(VoiceCommands.Cmd.Follow(FollowMode.TRAVEL), VoiceCommands.parse("chế độ di chuyển"))
+        assertEquals(VoiceCommands.Cmd.Follow(FollowMode.WORLD), VoiceCommands.parse("cố định màn hình"))
+        assertEquals(VoiceCommands.Cmd.DarkWeb(true), VoiceCommands.parse("bật web tối"))
+    }
+
+    @Test fun rulesFirstFastPath() {
+        assertTrue(FastPath.accept("YouTube ô 3", VoiceCommands.parse("YouTube ô 3")))
+        assertTrue(FastPath.accept("về giữa", VoiceCommands.parse("về giữa")))
+        assertFalse(FastPath.accept("mở youtube ô 3 rồi tắt bản đồ", VoiceCommands.parse("mở youtube ô 3 rồi tắt bản đồ")))
+        assertFalse(FastPath.accept("thủ đô Pháp là gì", VoiceCommands.parse("thủ đô Pháp là gì")))
+        assertFalse(FastPath.accept("tìm quán phở gần đây", VoiceCommands.parse("tìm quán phở gần đây")))
+    }
+
     @Test fun mockRouteWalks() {
         val r = MockRoute()
         val s0 = r.state()

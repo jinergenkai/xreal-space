@@ -10,13 +10,19 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.os.Build
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.TextView
+import vn.jiner.xrealspace.core.BodyFollow
+import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.HeadGestures
+import vn.jiner.xrealspace.core.ImuTracker
 import vn.jiner.xrealspace.core.LazyFollow
 import vn.jiner.xrealspace.core.M3
 import vn.jiner.xrealspace.core.Mat3
@@ -37,6 +43,18 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     companion object {
         const val BASE_W = 1280
         const val BORDER = 6
+
+        /** tells the app when a text field in the page gets focus, so the phone keyboard can open */
+        const val INPUT_HOOK_JS = "(function(){if(window.__xs)return;window.__xs=1;" +
+            "function t(e){if(!e)return false;if(e.isContentEditable)return true;var y=(e.type||'').toLowerCase();" +
+            "return e.tagName=='TEXTAREA'||(e.tagName=='INPUT'&&['text','search','email','url','tel','password','number',''].indexOf(y)>=0);}" +
+            "document.addEventListener('focusin',function(v){var e=v.target;if(t(e))XSpace.focus(e.type||'text',e.isContentEditable?(e.innerText||''):(e.value||''));},true);" +
+            "document.addEventListener('focusout',function(v){if(t(v.target))XSpace.blur();},true);})();"
+
+        /** dark mode for old Android (< 10): invert the page, re-invert media */
+        const val CSS_DARK_JS = "(function(){var s=document.createElement('style');" +
+            "s.textContent='html{filter:invert(1) hue-rotate(180deg);background:#fff}img,video,picture,canvas,iframe{filter:invert(1) hue-rotate(180deg)}';" +
+            "document.head.appendChild(s);})();"
     }
 
     inner class Panel(val index: Int) {
@@ -46,6 +64,9 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         var heightPx = BASE_W * 9 / 16
         var focused = false
             set(v) { if (v != field) { field = v; border.setStroke(BORDER, if (v) Colors.BORDER_FOCUS else Colors.BORDER) } }
+        /** last time (ms) the panel was on screen, for pausing panels you are not looking at */
+        var lastSeen = SystemClock.uptimeMillis()
+        var paused = false
 
         init {
             frame.background = border
@@ -58,19 +79,70 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 loadWithOverviewMode = true
                 setSupportZoom(true); builtInZoomControls = true; displayZoomControls = false
             }
+            applyDark(web, false)
+            web.addJavascriptInterface(InputBridge(), "XSpace")
             web.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                     val s = r.url.scheme ?: return true
                     return s != "http" && s != "https" // keep web navigation inside the panel, block intent:// etc.
                 }
-                override fun onPageFinished(v: WebView, url: String) { SpaceState.config.screens.getOrNull(index)?.let { if (it.url != url) { it.url = url } } }
+                override fun onPageFinished(v: WebView, url: String) {
+                    SpaceState.config.screens.getOrNull(index)?.let { if (it.url != url) { it.url = url } }
+                    v.evaluateJavascript(INPUT_HOOK_JS, null)
+                    if (SpaceState.darkWeb && Build.VERSION.SDK_INT < 29) v.evaluateJavascript(CSS_DARK_JS, null)
+                }
             }
-            web.webChromeClient = WebChromeClient()
+            web.webChromeClient = object : WebChromeClient() {
+                override fun onShowCustomView(view: View, callback: CustomViewCallback) { enterFullscreen(this@Panel, view, callback) }
+                override fun onHideCustomView() { exitFullscreen() }
+            }
             web.setBackgroundColor(Color.BLACK)
             frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             frame.pivotX = 0f; frame.pivotY = 0f
             SpaceState.config.screens.getOrNull(index)?.let { web.loadUrl(it.url) }
         }
+    }
+
+    /** Called by page JS when a text field gets / loses focus (binder thread -> main). */
+    inner class InputBridge {
+        @JavascriptInterface fun focus(kind: String, value: String) { post { SpaceState.onInputFocus?.invoke(value) } }
+        @JavascriptInterface fun blur() { post { SpaceState.onInputBlur?.invoke() } }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyDark(w: WebView, reload: Boolean) {
+        val on = SpaceState.darkWeb
+        when {
+            Build.VERSION.SDK_INT >= 33 -> w.settings.isAlgorithmicDarkeningAllowed = on   // app theme is dark, so pages get darkened
+            Build.VERSION.SDK_INT >= 29 -> w.settings.forceDark = if (on) WebSettings.FORCE_DARK_ON else WebSettings.FORCE_DARK_OFF
+        }
+        if (reload) w.reload()
+    }
+
+    // ------------------------------------------------------------------ fullscreen video (YouTube "⛶" button)
+    private val cinema = FrameLayout(ctx).apply { setBackgroundColor(Color.BLACK); visibility = GONE }
+    private var fullView: View? = null
+    private var fullCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullOwner: Panel? = null
+    private var modeBeforeFull: FollowMode? = null
+    val inFullscreen get() = fullView != null
+
+    private fun enterFullscreen(owner: Panel, view: View, cb: WebChromeClient.CustomViewCallback) {
+        if (fullView != null) { cb.onCustomViewHidden(); return }
+        fullView = view; fullCallback = cb; fullOwner = owner
+        cinema.addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        cinema.visibility = VISIBLE
+        if (SpaceState.followMode == FollowMode.WORLD) { modeBeforeFull = FollowMode.WORLD; SpaceState.setFollow(FollowMode.CINEMA, quiet = true) }
+        SpaceState.notify("Rạp phim", "Toàn màn hình · vuốt 2 ngón sang trái để thoát", Colors.CYAN, 2.5)
+        SpaceState.log("fullscreen video on")
+    }
+
+    fun exitFullscreen() {
+        val v = fullView ?: return
+        cinema.removeView(v); cinema.visibility = GONE
+        fullCallback?.onCustomViewHidden()
+        fullView = null; fullCallback = null; fullOwner = null
+        modeBeforeFull?.let { SpaceState.setFollow(it, quiet = true) }; modeBeforeFull = null
     }
 
     private val panels = ArrayList<Panel>()
@@ -103,6 +175,12 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 30f }
         visibility = GONE
     }
+    private val biasHint = TextView(ctx).apply {
+        setTextColor(Colors.AMBER); textSize = 24f; gravity = Gravity.CENTER; setPadding(30, 18, 30, 18)
+        background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.AMBER); cornerRadius = 18f }
+        text = "Giữ yên đầu 1 giây…"; visibility = GONE
+    }
+    private val body = BodyFollow()
     private val follow = LazyFollow(SpaceState.config.map)
     private val gestures = HeadGestures()
     private var lastFrameNs = 0L
@@ -125,6 +203,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         slotLabels.forEach { addView(it, LayoutParams(220, 124)); it.pivotX = 0f; it.pivotY = 0f }
         addView(card, LayoutParams(820, LayoutParams.WRAP_CONTENT))
         addView(voice, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        addView(cinema, LayoutParams(100, 100))
+        addView(biasHint, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         addView(crosshair, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         crosshair.isClickable = false
         rebuildPanels()
@@ -145,7 +225,9 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     fun start() { if (!running) { running = true; lastFrameNs = 0; Choreographer.getInstance().postFrameCallback(this) } }
     fun stop() { running = false; Choreographer.getInstance().removeFrameCallback(this) }
 
-    fun destroy() { stop(); panels.forEach { it.web.destroy() }; panels.clear() }
+    fun destroy() { stop(); exitFullscreen(); panels.forEach { it.web.destroy() }; panels.clear() }
+
+    private var styleSeen = SpaceState.styleVersion
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
@@ -179,26 +261,40 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         wizardText.visibility = if (wz != null) VISIBLE else GONE
         if (wz != null) wizardText.text = wz.text
 
-        if (st.recenterRequested) { st.recenterRequested = false; follow.reset() }
+        if (st.recenterRequested) { st.recenterRequested = false; follow.reset(); body.reset() }
+        if (styleSeen != st.styleVersion) { styleSeen = st.styleVersion; panels.forEach { applyDark(it.web, true) } }
 
         // camera orientation (cam -> world)
         C = if (M == null || st.headLocked || wz != null) Mat3.eye()
             else Projection.camera(tracker.predicted(st.config.predictMs), M)
 
         val cfg = st.config
-        // carrying a screen with the head: it follows the gaze direction
+        // the whole space's anchor: identity when fixed in the room, trailing the head in cinema / travel mode
+        val F = body.update(C, if (st.headLocked) FollowMode.WORLD else st.followMode, dt)
+        // carrying a screen with the head: it follows the gaze direction (expressed in the anchor frame)
         cfg.screens.getOrNull(st.grabbedPanel)?.let { g ->
-            val (gy, gp) = Projection.yawPitch(C)
+            val (gy, gp) = Projection.yawPitch(Mat3.mul(Mat3.t(F), C))
             g.yaw = gy; g.pitch = gp
+        }
+        // fullscreen video: fills the glasses screen (scaled), drifts with the cinema anchor
+        if (fullView != null) {
+            val cw = (w * st.cinemaScale).toInt(); val ch = (h * st.cinemaScale).toInt()
+            val lp = cinema.layoutParams
+            if (lp.width != cw || lp.height != ch) { lp.width = cw; lp.height = ch; cinema.layoutParams = lp }
+            val pl = Projection.place(C, F, cfg.distanceM, 1.0, w, h, cfg.fovVDeg)
+            cinema.translationX = ((if (pl.visible) pl.cx else w / 2.0) - cw / 2.0).toFloat()
+            cinema.translationY = ((if (pl.visible) pl.cy else h / 2.0) - ch / 2.0).toFloat()
         }
         // world-locked screens
         var best = -1; var bestD = Double.MAX_VALUE
+        val nowMs = SystemClock.uptimeMillis()
         panels.forEachIndexed { i, p ->
             val spec = cfg.screens.getOrNull(i) ?: return@forEachIndexed
-            if (st.walkMode || wz != null) { hide(p.frame); return@forEachIndexed }
-            val P = Mat3.mul(Mat3.rotY(spec.yaw), Mat3.rotX(spec.pitch))
+            if (st.walkMode || wz != null || fullView != null) { hide(p.frame); pauseIfStale(p, nowMs); return@forEachIndexed }
+            val P = Mat3.mul(F, Mat3.mul(Mat3.rotY(spec.yaw), Mat3.rotX(spec.pitch)))
             val pl = Projection.place(C, P, cfg.distanceM, spec.widthM, w, h, cfg.fovVDeg)
             layoutOn(p.frame, pl, BASE_W + 2.0 * BORDER, p.heightPx + 2.0 * BORDER)
+            if (pl.visible) { p.lastSeen = nowMs; if (p.paused) { p.web.onResume(); p.paused = false } } else pauseIfStale(p, nowMs)
             if (pl.visible) {
                 val d = hypot(pl.cx - w / 2.0, pl.cy - h / 2.0)
                 val halfW = pl.widthPx / 2
@@ -210,8 +306,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
 
         // lazy-follow map
         if (st.showMap && wz == null) {
-            val F = follow.update(C, dt)
-            val P = Mat3.mul(F, Mat3.mul(Mat3.rotY(cfg.map.yaw), Mat3.rotX(cfg.map.pitch)))
+            val Fm = follow.update(C, dt)
+            val P = Mat3.mul(Fm, Mat3.mul(Mat3.rotY(cfg.map.yaw), Mat3.rotX(cfg.map.pitch)))
             val pl = Projection.place(C, P, cfg.map.distanceM, cfg.map.widthM, w, h, cfg.fovVDeg)
             layoutOn(mapView, pl, MapPanelView.W.toDouble(), MapPanelView.H.toDouble())
             mapView.step(dt)
@@ -253,7 +349,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         for (k in 1..9) {
             val v = slotLabels[k - 1]
             if (!showGrid) { hide(v); continue }
-            val P = Mat3.mul(Mat3.rotY(SlotGrid.yaw(k)), Mat3.rotX(SlotGrid.pitch(k)))
+            val P = Mat3.mul(F, Mat3.mul(Mat3.rotY(SlotGrid.yaw(k)), Mat3.rotX(SlotGrid.pitch(k))))
             if (k in used) {
                 // small tag at the top-left corner of an occupied slot
                 val pl = Projection.place(C, P, cfg.distanceM, 0.18, w, h, cfg.fovVDeg)
@@ -284,12 +380,21 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             voice.x = (w - voice.width) / 2f; voice.y = h - voice.height - 30f
         } else if (voice.visibility != GONE) voice.visibility = GONE
 
+        val needStill = wz == null && st.imuSource != SpaceState.ImuSource.NONE && tracker.biasState != ImuTracker.BiasState.READY
+        if (needStill != (biasHint.visibility == VISIBLE)) biasHint.visibility = if (needStill) VISIBLE else GONE
+
         status.visibility = if (st.showStatus && wz == null) VISIBLE else GONE
         if (status.visibility == VISIBLE) {
             status.x = 20f; status.y = 20f
             status.text = "%s  imu %.0fHz  bias %s  render %.0ffps  focus %s".format(
                 st.imuSource, tracker.rate, tracker.biasState, fps, if (best >= 0) cfg.screens[best].title else "-")
         }
+    }
+
+    /** Pause a WebView you have not looked at for a while (saves battery/heat); never the fullscreen one. */
+    private fun pauseIfStale(p: Panel, nowMs: Long) {
+        if (!SpaceState.pauseOffscreen || p.paused || p === fullOwner) return
+        if (nowMs - p.lastSeen > 8000) { p.web.onPause(); p.paused = true }
     }
 
     private fun hide(v: View) { if (v.visibility != INVISIBLE) v.visibility = INVISIBLE }
@@ -337,28 +442,38 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     fun touchpad(action: Int, dxTotal: Float, dyTotal: Float, gain: Float = 1.6f) {
         when (action) {
             MotionEvent.ACTION_DOWN -> {
+                fullView?.let { fv -> fullTouch = fv; touchX = fv.width / 2f; touchY = fv.height / 2f; touchDownTime = SystemClock.uptimeMillis(); sendTo(fv, MotionEvent.ACTION_DOWN, touchX, touchY); return }
                 val p = panels.getOrNull(SpaceState.focusedPanel) ?: return
                 val pt = gazeLocal(p) ?: return
                 touchTarget = p; touchX = pt[0]; touchY = pt[1]
                 touchDownTime = SystemClock.uptimeMillis()
                 send(p, MotionEvent.ACTION_DOWN, touchX, touchY)
             }
-            MotionEvent.ACTION_MOVE -> touchTarget?.let { send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touchTarget?.let {
+            MotionEvent.ACTION_MOVE -> fullTouch?.let { sendTo(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) } ?: touchTarget?.let { send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> fullTouch?.let { sendTo(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain); fullTouch = null } ?: touchTarget?.let {
                 send(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain); touchTarget = null
             }
         }
     }
 
-    private fun send(p: Panel, action: Int, x: Float, y: Float) {
+    private var fullTouch: View? = null
+
+    private fun send(p: Panel, action: Int, x: Float, y: Float) = sendTo(p.web, action, x, y)
+
+    private fun sendTo(v: View, action: Int, x: Float, y: Float) {
         val ev = MotionEvent.obtain(touchDownTime, SystemClock.uptimeMillis(), action, x, y, 0)
         ev.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
-        p.web.dispatchTouchEvent(ev)
+        v.dispatchTouchEvent(ev)
         ev.recycle()
     }
 
-    /** Volume-key / remote click at the gaze dot. */
+    /** Volume-key / remote click at the gaze dot (fullscreen: tap the middle = play/pause). */
     fun clickAtGaze(): Boolean {
+        fullView?.let { fv ->
+            touchDownTime = SystemClock.uptimeMillis()
+            sendTo(fv, MotionEvent.ACTION_DOWN, fv.width / 2f, fv.height / 2f); sendTo(fv, MotionEvent.ACTION_UP, fv.width / 2f, fv.height / 2f)
+            return true
+        }
         val p = panels.getOrNull(SpaceState.focusedPanel) ?: return false
         val pt = gazeLocal(p) ?: return false
         touchDownTime = SystemClock.uptimeMillis()
@@ -367,7 +482,21 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         return true
     }
 
-    fun focusedWeb(): WebView? = panels.getOrNull(SpaceState.focusedPanel)?.web ?: panels.firstOrNull()?.web
+    /** Two-finger swipe left: leave fullscreen, else go back in the page you look at. */
+    fun back() { if (fullView != null) exitFullscreen() else focusedWeb()?.let { if (it.canGoBack()) it.goBack() } }
+
+    fun forward() { focusedWeb()?.let { if (it.canGoForward()) it.goForward() } }
+
+    /** Phone keyboard -> the focused text field of the page (works with React-style inputs too). */
+    fun setFocusedInputValue(value: String) {
+        val js = org.json.JSONObject.quote(value)
+        focusedWeb()?.evaluateJavascript("""(function(v){var e=document.activeElement;if(!e)return;
+            if(e.isContentEditable){document.execCommand('selectAll',false,null);document.execCommand('insertText',false,v);return;}
+            var d=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e),'value');if(d&&d.set)d.set.call(e,v);else e.value=v;
+            e.dispatchEvent(new Event('input',{bubbles:true}));})($js)""".trimIndent(), null)
+    }
+
+    fun focusedWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)?.web ?: panels.firstOrNull()?.web
 
     fun webAt(i: Int): WebView? = panels.getOrNull(i)?.web
 

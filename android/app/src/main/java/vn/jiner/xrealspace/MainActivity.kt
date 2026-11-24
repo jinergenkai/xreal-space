@@ -30,6 +30,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import vn.jiner.xrealspace.core.FastPath
+import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.VoiceCommands
 import vn.jiner.xrealspace.core.WakeWord
 
@@ -49,7 +55,7 @@ class SpacePresentation(ctx: Context, display: Display) : Presentation(ctx, disp
     override fun onStop() { space.stop(); super.onStop() }
 }
 
-class MainActivity : Activity(), SpaceState.Controller {
+class MainActivity : Activity(), SpaceState.Controller, TouchpadView.Host {
     private lateinit var usb: GlassesUsb
     private lateinit var phoneImu: PhoneImu
     private lateinit var dm: DisplayManager
@@ -68,6 +74,11 @@ class MainActivity : Activity(), SpaceState.Controller {
     private lateinit var typeField: EditText
     private lateinit var backBtn: Button
     private lateinit var voice: VoiceInput
+    private lateinit var padOverlay: FrameLayout
+    private lateinit var kbField: EditText
+    private var kbActive = false
+    private var kbProgrammatic = false
+    private var dictating = false
     private lateinit var aiStatus: TextView
 
     private val space: SpaceView? get() = phoneSpace ?: presentation?.space
@@ -76,7 +87,7 @@ class MainActivity : Activity(), SpaceState.Controller {
         override fun onDisplayAdded(id: Int) { SpaceState.log("display added $id"); if (started && wantGlassesOutput) showOnGlasses(quiet = true) }
         override fun onDisplayRemoved(id: Int) {
             SpaceState.log("display removed $id")
-            if (presentation?.display?.displayId == id) { presentation?.dismiss(); presentation = null }
+            if (presentation?.display?.displayId == id) { presentation?.dismiss(); presentation = null; showTouchpad(false) }
         }
         override fun onDisplayChanged(id: Int) {}
     }
@@ -86,7 +97,8 @@ class MainActivity : Activity(), SpaceState.Controller {
         super.onCreate(savedInstanceState)
         SpaceState.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        usb = GlassesUsb(this) { ui.post { refreshStatus() } }
+        // plugging the glasses in = connect IMU + show the space on them + phone becomes the touchpad, no buttons
+        usb = GlassesUsb(this) { ui.post { refreshStatus(); if (usb.connected && started && wantGlassesOutput) showOnGlasses(quiet = true) } }
         phoneImu = PhoneImu(this)
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         voice = VoiceInput(this) { text -> handleUtterance(text) }
@@ -120,6 +132,7 @@ class MainActivity : Activity(), SpaceState.Controller {
         voice.stopWake()
         phoneSpace?.stop()
         presentation?.dismiss(); presentation = null
+        showTouchpad(false)
         SpaceState.save()
         super.onStop()
     }
@@ -165,6 +178,7 @@ class MainActivity : Activity(), SpaceState.Controller {
         try {
             presentation = SpacePresentation(this, d).also { it.show() }
             SpaceState.log("Presentation on display ${d.displayId} '${d.name}'")
+            showTouchpad(true)
         } catch (e: Exception) {
             SpaceState.log("Presentation failed: $e"); presentation = null
         }
@@ -172,7 +186,7 @@ class MainActivity : Activity(), SpaceState.Controller {
 
     private fun showOnPhone() {
         wantGlassesOutput = false
-        presentation?.dismiss(); presentation = null
+        presentation?.dismiss(); presentation = null; showTouchpad(false)
         if (phoneSpace != null) return
         val s = SpaceView(this, onPhoneScreen = true)
         phoneSpace = s
@@ -220,11 +234,19 @@ class MainActivity : Activity(), SpaceState.Controller {
         val st = SpaceState
         st.log("voice: $text")
         st.voiceHeard = text
+        if (dictating) {   // holding the touchpad while a page text field is focused = dictation
+            dictating = false
+            val cur = kbField.text.toString()
+            kbField.setText(if (cur.isBlank()) text else "$cur $text"); kbField.setSelection(kbField.text.length)
+            return
+        }
         val rules = VoiceCommands.parse(text)
         fun runRules(prefix: String = "") {
             if (rules !is VoiceCommands.Cmd.Unknown) st.notify("🎤 $text", prefix + label(rules), Colors.GREEN, 2.0)
             st.execute(rules)
         }
+        // rules first: a simple command that the rules understood runs instantly, no network round trip
+        if (st.intentEngine != SpaceState.IntentEngine.RULES && FastPath.accept(text, rules)) { runRules("⚡ "); return }
         when (st.intentEngine) {
             SpaceState.IntentEngine.RULES -> runRules()
             SpaceState.IntentEngine.JEV -> {
@@ -306,6 +328,9 @@ class MainActivity : Activity(), SpaceState.Controller {
             }
             KeyEvent.KEYCODE_V -> pushToTalk()
             KeyEvent.KEYCODE_G -> st.toggleGrab()
+            KeyEvent.KEYCODE_T -> st.setFollow(st.followMode.next())
+            KeyEvent.KEYCODE_D -> st.setDarkWeb(null)
+            KeyEvent.KEYCODE_ESCAPE -> space?.back()
             KeyEvent.KEYCODE_VOLUME_DOWN -> st.recenter()
             KeyEvent.KEYCODE_R -> st.recenter()
             KeyEvent.KEYCODE_W -> st.toggleWalk()
@@ -337,8 +362,63 @@ class MainActivity : Activity(), SpaceState.Controller {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (space?.inFullscreen == true) { space?.exitFullscreen(); return }
+        if (::padOverlay.isInitialized && padOverlay.visibility == View.VISIBLE) { showTouchpad(false); return }
         if (phoneSpace != null) { leavePhoneScreen(); return }
         @Suppress("DEPRECATION") super.onBackPressed()
+    }
+
+    // ------------------------------------------------------------------ eyes-free touchpad + phone keyboard
+    override fun space(): SpaceView? = space
+    override fun onHold() { if (kbActive) { dictating = true; withMic { voice.captureCommand() } } else pushToTalk() }
+    override fun onTwoTap() = SpaceState.recenter()
+    override fun onThreeTap() = SpaceState.setFollow(SpaceState.followMode.next())
+    override fun onSwipe2(dx: Float, dy: Float) {
+        if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) { if (dx < 0) space?.back() else space?.forward() }
+        else if (dy < 0) SpaceState.showGrid(6.0) else SpaceState.toggleWalk()
+    }
+
+    private fun showTouchpad(on: Boolean) {
+        if (!::padOverlay.isInitialized) return
+        padOverlay.visibility = if (on) View.VISIBLE else View.GONE
+        if (!on) hideKeyboard()
+    }
+
+    private fun onPageInputFocus(value: String) {
+        if (!::kbField.isInitialized) return
+        kbActive = true
+        kbProgrammatic = true; kbField.setText(value); kbField.setSelection(kbField.text.length); kbProgrammatic = false
+        kbField.visibility = View.VISIBLE
+        kbField.requestFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(kbField, InputMethodManager.SHOW_IMPLICIT)
+        SpaceState.notify("⌨ Bàn phím", "Gõ trên điện thoại · giữ touchpad để đọc chính tả", Colors.CYAN, 2.0)
+    }
+
+    private fun hideKeyboard() {
+        if (!::kbField.isInitialized) return
+        kbActive = false; dictating = false
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(kbField.windowToken, 0)
+        kbField.clearFocus(); kbField.visibility = View.GONE
+    }
+
+    private fun buildTouchpadOverlay(): FrameLayout {
+        val fl = FrameLayout(this).apply { visibility = View.GONE; setBackgroundColor(0xFF05080C.toInt()) }
+        fl.addView(TouchpadView(this, this), FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        kbField = EditText(this).apply {
+            setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY); hint = "Gõ vào ô đang chọn trên trang"
+            imeOptions = EditorInfo.IME_ACTION_GO; visibility = View.GONE
+            setBackgroundColor(0xFF1C232C.toInt()); setPadding(dp(14), dp(12), dp(14), dp(12))
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: Editable?) { if (!kbProgrammatic) space?.setFocusedInputValue(e?.toString() ?: "") }
+            })
+            setOnEditorActionListener { _, _, _ -> space?.typeText("", true); hideKeyboard(); true }
+        }
+        fl.addView(kbField, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        fl.addView(btn("⚙") { showTouchpad(false) }.apply { alpha = 0.5f },
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END))
+        return fl
     }
 
     // ------------------------------------------------------------------ status / diagnostics
@@ -353,6 +433,7 @@ class MainActivity : Activity(), SpaceState.Controller {
             if (st.imuSource == SpaceState.ImuSource.GLASSES)
                 append("Gói: ${usb.packets} (IMU ${usb.parsed}, khác ${usb.otherPackets})${if (usb.lastError.isNotEmpty()) "\nLỗi: ${usb.lastError}" else ""}\n")
             append("Hiển thị: $out · khoảng cách %.2f m · FOV %.1f°\n".format(st.config.distanceM, st.config.fovVDeg))
+            append("Chế độ: ${st.followMode.title} · web tối ${if (st.darkWeb) "bật" else "tắt"}\n")
             append("Màn đang nhìn: ${st.config.screens.getOrNull(st.focusedPanel)?.title ?: "-"}")
             if (st.walkMode) append(" · ĐI BỘ"); if (st.headLocked) append(" · HEAD-LOCKED"); if (!st.showMap) append(" · tắt bản đồ")
         }
@@ -437,6 +518,18 @@ class MainActivity : Activity(), SpaceState.Controller {
             text = "Nút âm lượng: + = click · − = về giữa. Gật đầu = OK/bật-tắt bản đồ, lắc đầu = bỏ qua."
             setTextColor(Colors.GREY); textSize = 12f; setPadding(0, dp(4), 0, 0)
         })
+
+        col.addView(label("Chế độ (xem phim · làm việc · di chuyển)"))
+        col.addView(row(btn("Cố định") { SpaceState.setFollow(FollowMode.WORLD) }, btn("Rạp phim") { SpaceState.setFollow(FollowMode.CINEMA) },
+            btn("Di chuyển") { SpaceState.setFollow(FollowMode.TRAVEL) }))
+        col.addView(row(btn("Web tối bật/tắt") { SpaceState.setDarkWeb(null) },
+            btn("Rạp −") { SpaceState.cinemaScale = (SpaceState.cinemaScale - 0.05).coerceIn(0.4, 1.0); SpaceState.saveSettings() },
+            btn("Rạp +") { SpaceState.cinemaScale = (SpaceState.cinemaScale + 0.05).coerceIn(0.4, 1.0); SpaceState.saveSettings() },
+            btn("Touchpad") { showTouchpad(true) }))
+        col.addView(row(btn("Tạm dừng màn khuất: bật/tắt") {
+            SpaceState.pauseOffscreen = !SpaceState.pauseOffscreen; SpaceState.saveSettings()
+            SpaceState.notify("Tạm dừng màn khuất", if (SpaceState.pauseOffscreen) "bật (đỡ nóng máy)" else "tắt (nhạc ở ô khác vẫn chạy)", Colors.CYAN, 2.0)
+        }))
 
         col.addView(label("Không gian"))
         col.addView(row(btn("Về giữa") { SpaceState.recenter() }, btn("Đi bộ") { SpaceState.toggleWalk() },
@@ -546,6 +639,10 @@ class MainActivity : Activity(), SpaceState.Controller {
             visibility = View.GONE; alpha = 0.7f
         }
         root.addView(backBtn, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))
+        padOverlay = buildTouchpadOverlay()
+        root.addView(padOverlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        SpaceState.onInputFocus = { v -> onPageInputFocus(v) }
+        SpaceState.onInputBlur = { ui.postDelayed({ if (kbActive && !kbField.hasFocus()) hideKeyboard() }, 400) }
         setContentView(root)
         refreshDiag()
     }

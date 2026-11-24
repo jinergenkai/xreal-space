@@ -1,5 +1,8 @@
 # XREAL Space — Android test build (Beam Pro / điện thoại Android)
 
+> **Wiki đầy đủ (danh sách tính năng, cử chỉ, lệnh giọng nói, checklist test, nhật ký phiên bản): [`docs/WIKI.md`](docs/WIKI.md).**
+> README này chỉ giữ phần build và cấu trúc.
+
 Bản port Android của prototype Python `xreal-spatial-prototype` (23/11/2026). Mục tiêu: kiểm chứng trên
 **Beam Pro** và điện thoại Android rằng app tự viết đọc được IMU kính Air 2 và vẽ được không gian lên kính,
 **không cần SDK hay app của hãng**.
@@ -87,7 +90,7 @@ Cần JDK 17 + Android SDK (API 35). Chọn một cách:
 
 Cài: `adb install -r app-debug.apk` (hoặc copy APK sang máy rồi mở).
 
-Test lõi (giao thức, tracker, wizard, bản đồ, lưới 9 ô, luật/Jev/LLM parsing, từ đánh thức): `gradlew test` — 17 test,
+Test lõi (giao thức, tracker, wizard, bản đồ, lưới 9 ô, luật/Jev/LLM parsing, từ đánh thức, chế độ đi theo): `gradlew test` — 19 test,
 có 1 test chạy trên 4 giây dữ liệu Air 2 thật.
 
 ## Kịch bản test trên Beam Pro

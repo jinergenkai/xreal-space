@@ -263,6 +263,8 @@ object VoiceCommands {
         object Summarize : Cmd()
         object ShowGrid : Cmd()
         data class Workspace(val name: String) : Cmd()
+        data class Follow(val mode: FollowMode) : Cmd()
+        data class DarkWeb(val on: Boolean?) : Cmd()
         data class SaveWorkspace(val name: String) : Cmd()
         /** put [url] into grid slot 1..9 */
         data class Place(val slot: Int, val url: String, val title: String?) : Cmd()
@@ -334,6 +336,11 @@ object VoiceCommands {
         // workspaces
         if (has("luu khong gian", "luu bo cuc", "save workspace")) return Cmd.SaveWorkspace(workspaceName(t))
         if (has("rap phim", "xem phim")) return Cmd.Workspace("giai tri")
+        if (has("che do di chuyen", "di xe", "tren xe", "may bay", "travel mode", "travel")) return Cmd.Follow(FollowMode.TRAVEL)
+        if (has("co dinh", "dung yen", "world lock", "world locked")) return Cmd.Follow(FollowMode.WORLD)
+        if (has("di theo dau", "theo minh", "follow")) return Cmd.Follow(FollowMode.CINEMA)
+        if (has("web toi", "che do toi", "dark mode", "giam choi")) return Cmd.DarkWeb(true)
+        if (has("web sang", "che do sang", "light mode")) return Cmd.DarkWeb(false)
         if (has("khong gian", "workspace", "bo cuc")) return Cmd.Workspace(workspaceName(t))
         if (has("hien so", "hien luoi", "luoi", "show grid", "cac o")) return Cmd.ShowGrid
         // slots

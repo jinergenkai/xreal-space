@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import vn.jiner.xrealspace.core.AxisWizard
+import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.ImuTracker
 import vn.jiner.xrealspace.core.M3
 import vn.jiner.xrealspace.core.MapSpec
@@ -53,6 +54,19 @@ object SpaceState {
     /** voice state shown on the glasses: "" | "listening" | "thinking" */
     var voiceState = ""
     var voiceHeard = ""
+
+    // --- watching / working / moving (persisted)
+    var followMode = FollowMode.WORLD
+    var darkWeb = true
+    var pauseOffscreen = true
+    /** fullscreen video size, fraction of the glasses screen */
+    var cinemaScale = 0.9
+    /** bumped when dark mode changes so the renderer re-applies it */
+    var styleVersion = 0
+        private set
+    /** a text field inside a page got / lost focus -> phone keyboard (set by MainActivity) */
+    var onInputFocus: ((String) -> Unit)? = null
+    var onInputBlur: (() -> Unit)? = null
 
     /** longer assistant answer / page summary card (head-locked) */
     var cardTitle = ""
@@ -147,6 +161,20 @@ object SpaceState {
             if (walkMode) "Ẩn màn hình lớn, chỉ giữ bản đồ + thông tin" else "Hiện lại các màn hình", secs = 2.5)
     }
 
+    fun setFollow(m: FollowMode, quiet: Boolean = false) {
+        followMode = m; recenterRequested = true; saveSettings()
+        if (!quiet) notify("Chế độ: ${m.title}", when (m) {
+            FollowMode.WORLD -> "Màn hình đứng yên trong phòng"
+            FollowMode.CINEMA -> "Màn hình trôi nhẹ về trước mặt khi bạn đổi tư thế"
+            FollowMode.TRAVEL -> "Màn hình đi theo hướng bạn, xe rẽ không bị lệch"
+        }, Colors.CYAN, 2.5)
+    }
+
+    fun setDarkWeb(on: Boolean?) {
+        darkWeb = on ?: !darkWeb; styleVersion++; saveSettings()
+        notify("Web tối", if (darkWeb) "bật — đỡ chói trên kính" else "tắt", Colors.CYAN, 1.5)
+    }
+
     fun setMap(on: Boolean?) { showMap = on ?: !showMap; notify("Bản đồ", if (showMap) "bật" else "tắt", Colors.GREEN, 1.5) }
 
     fun changeDistance(factor: Double) { config.distanceM = VoiceCommands.clampDistance(config.distanceM * factor); save() }
@@ -216,6 +244,7 @@ object SpaceState {
         }
         config.screens.clear(); config.screens.addAll(w.screens.map { it.copy() })
         config.distanceM = w.distanceM; showMap = w.showMap; walkMode = false; grabbedPanel = -1
+        if (w.id == "giai tri") setFollow(FollowMode.CINEMA, quiet = true)
         panelsVersion++; save(); recenter()
         notify("Không gian: ${w.title}", "${w.screens.size} màn hình", Colors.CYAN, 2.5)
     }
@@ -254,6 +283,8 @@ object SpaceState {
             VoiceCommands.Cmd.Summarize -> controller?.summarizeFocused()
             VoiceCommands.Cmd.ShowGrid -> showGrid(8.0)
             is VoiceCommands.Cmd.Workspace -> setWorkspace(cmd.name)
+            is VoiceCommands.Cmd.Follow -> setFollow(cmd.mode)
+            is VoiceCommands.Cmd.DarkWeb -> setDarkWeb(cmd.on)
             is VoiceCommands.Cmd.SaveWorkspace -> saveWorkspace(cmd.name)
             is VoiceCommands.Cmd.Place -> place(cmd.slot, cmd.url, cmd.title)
             is VoiceCommands.Cmd.ClearSlot -> clearSlot(cmd.slot)
@@ -298,6 +329,7 @@ object SpaceState {
         for (w in savedWorkspaces.values) ws.put(JSONObject().put("id", w.id).put("title", w.title).put("distanceM", w.distanceM)
             .put("showMap", w.showMap).put("screens", screensJson(w.screens)))
         val o = JSONObject()
+            .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
             .put("jevBaseUrl", jevBaseUrl).put("jevModel", jevModel).put("jevKey", jevKey)
@@ -310,6 +342,9 @@ object SpaceState {
         val s = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SETTINGS, null) ?: return
         try {
             val o = JSONObject(s)
+            followMode = runCatching { FollowMode.valueOf(o.optString("followMode", followMode.name)) }.getOrDefault(followMode)
+            darkWeb = o.optBoolean("darkWeb", darkWeb); pauseOffscreen = o.optBoolean("pauseOffscreen", pauseOffscreen)
+            cinemaScale = o.optDouble("cinemaScale", cinemaScale).coerceIn(0.4, 1.0)
             intentEngine = runCatching { IntentEngine.valueOf(o.optString("intentEngine", intentEngine.name)) }.getOrDefault(intentEngine)
             sttEngine = runCatching { SttEngine.valueOf(o.optString("sttEngine", sttEngine.name)) }.getOrDefault(sttEngine)
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)

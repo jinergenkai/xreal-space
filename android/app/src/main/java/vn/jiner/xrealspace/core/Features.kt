@@ -164,6 +164,8 @@ Các hàm:
 - distance {change:"farther"|"closer"}
 - size {change:"bigger"|"smaller"}   màn đang nhìn
 - head_lock {on:true|false|null}
+- follow_mode {mode:"world"|"cinema"|"travel"}   cố định trong phòng / rạp phim trôi theo / di chuyển (xe, máy bay)
+- dark_web {on:true|false|null}   làm tối trang web cho đỡ chói
 - summarize {}   tóm tắt trang đang nhìn
 - answer {text}   câu hỏi thường: trả lời ngắn (tối đa 3 câu) để hiện lên kính
 Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì dùng answer để hỏi lại.
@@ -214,6 +216,8 @@ Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì d�
                 "distance" -> if (m["change"] == "closer") VoiceCommands.Cmd.Closer else VoiceCommands.Cmd.Farther
                 "size" -> VoiceCommands.Cmd.Size(m["change"] != "smaller")
                 "head_lock" -> VoiceCommands.Cmd.HeadLock(bool(m["on"]))
+                "follow_mode" -> when (m["mode"]) { "cinema" -> FollowMode.CINEMA; "travel" -> FollowMode.TRAVEL; else -> FollowMode.WORLD }.let { VoiceCommands.Cmd.Follow(it) }
+                "dark_web" -> VoiceCommands.Cmd.DarkWeb(bool(m["on"]))
                 "summarize" -> VoiceCommands.Cmd.Summarize
                 "answer" -> (m["text"] as? String)?.let { VoiceCommands.Cmd.Answer(it) }
                 else -> null
@@ -274,6 +278,8 @@ object JevProtocol {
         "bigger" to "make the current screen bigger",
         "smaller" to "make the current screen smaller",
         "head_lock" to "lock screens to the head / unlock",
+        "follow_mode" to "change how screens follow: fixed in the room, cinema drift, or travel / vehicle mode",
+        "dark_web" to "dark mode / reduce glare on web pages, or turn it off",
         "summarize" to "summarize the page the user is looking at",
         "question" to "a general question or chat for the assistant, not a command",
         "none" to "noise, unclear, or not addressed to the app",
@@ -291,15 +297,17 @@ object JevProtocol {
         fun choice(instr: String, opts: Map<String, String>) =
             """{"type":"choice","instructions":${MiniJson.quote(instr)},"criteria":{${opts.entries.joinToString(",") { "${MiniJson.quote(it.key)}:${MiniJson.quote(it.value)}" }}}}"""
         val sites = SITES.keys.associateWith { "the user means $it" } + ("other" to "another site, or no site mentioned")
+        val modes = mapOf("world" to "fixed in the room / stay still", "cinema" to "cinema, gently follow the head", "travel" to "travel, bus, car, plane, walking")
         val onOff = mapOf("on" to "turn on / show / enable", "off" to "turn off / hide / disable", "toggle" to "not stated")
         return """{"model":${MiniJson.quote(model)},"state":{"utterance":${MiniJson.quote(transcript)},"language":"Vietnamese or English, from speech recognition, may contain typos"},"questions":{""" +
             "\"intent\":" + choice("Which command did the user give to the AR glasses app?", INTENTS) + "," +
             "\"site\":" + choice("Which website or app is mentioned?", sites) + "," +
-            "\"switch\":" + choice("For on/off commands, which state is wanted?", onOff) +
+            "\"switch\":" + choice("For on/off commands, which state is wanted?", onOff) + "," +
+            "\"mode\":" + choice("For follow-mode commands, which mode?", modes) +
             "}}"
     }
 
-    data class Decision(val intent: String, val confidence: Double, val site: String?, val switch: String?)
+    data class Decision(val intent: String, val confidence: Double, val site: String?, val switch: String?, val mode: String? = null)
 
     @Suppress("UNCHECKED_CAST")
     fun parseDecision(json: String): Decision? {
@@ -309,7 +317,7 @@ object JevProtocol {
         val intent = ch("intent") ?: return null
         val name = intent["choice"] as? String ?: return null
         val conf = (intent["confidence"] as? Double) ?: ((intent["probabilities"] as? Map<String, Any?>)?.get(name) as? Double) ?: 0.0
-        return Decision(name, conf, ch("site")?.get("choice") as? String, ch("switch")?.get("choice") as? String)
+        return Decision(name, conf, ch("site")?.get("choice") as? String, ch("switch")?.get("choice") as? String, ch("mode")?.get("choice") as? String)
     }
 
     /** Turn the classifier's decision + the transcript into an app command. */
@@ -337,6 +345,8 @@ object JevProtocol {
             "bigger" -> VoiceCommands.Cmd.Size(true)
             "smaller" -> VoiceCommands.Cmd.Size(false)
             "head_lock" -> VoiceCommands.Cmd.HeadLock(on)
+            "follow_mode" -> VoiceCommands.Cmd.Follow(when (d.mode) { "cinema" -> FollowMode.CINEMA; "travel" -> FollowMode.TRAVEL; else -> FollowMode.WORLD })
+            "dark_web" -> VoiceCommands.Cmd.DarkWeb(on)
             "summarize" -> VoiceCommands.Cmd.Summarize
             "question" -> VoiceCommands.Cmd.Ask(transcript)
             else -> VoiceCommands.Cmd.Unknown(transcript)
@@ -375,3 +385,56 @@ object WakeWord {
 }
 
 fun headSpeedDps(wRad: V3): Double = Math.toDegrees(Mat3.norm(wRad))
+
+/**
+ * How the whole space reacts to head/body turns (3DoF has no position, so this is what makes it usable on the move):
+ *  - WORLD:  screens stay fixed in the room (desk, sofa).
+ *  - CINEMA: the big screen drifts gently back in front when you shift or lie down (small dead zone, slow).
+ *  - TRAVEL: everything trails your heading (bus, plane, walking): large dead zone, quicker catch-up,
+ *            so a vehicle turning does not swing the screens out of view.
+ */
+enum class FollowMode(val title: String, val deadzoneDeg: Double, val speed: Double, val pitchToo: Boolean) {
+    WORLD("Cố định", 0.0, 0.0, false),
+    CINEMA("Rạp phim", 10.0, 0.6, true),
+    TRAVEL("Di chuyển", 22.0, 1.8, true);
+
+    fun next() = entries[(ordinal + 1) % entries.size]
+}
+
+/** Anchor rotation F for the whole space: panels are drawn at F * P instead of P. */
+class BodyFollow {
+    var yaw = 0.0; private set
+    var pitch = 0.0; private set
+    private var init = false
+
+    fun update(C: M3, mode: FollowMode, dt: Double): M3 {
+        if (mode == FollowMode.WORLD) { init = false; yaw = 0.0; pitch = 0.0; return Mat3.eye() }
+        val (y, p) = Projection.yawPitch(C)
+        if (!init) { yaw = y; pitch = if (mode.pitchToo) p else 0.0; init = true }
+        val k = kotlin.math.min(1.0, mode.speed * dt)
+        val dy = wrap180(y - yaw)
+        if (kotlin.math.abs(dy) > mode.deadzoneDeg) yaw += (dy - mode.deadzoneDeg * kotlin.math.sign(dy)) * k
+        if (mode.pitchToo) {
+            val dp = p - pitch; val dz = mode.deadzoneDeg * 0.7
+            if (kotlin.math.abs(dp) > dz) pitch += (dp - dz * kotlin.math.sign(dp)) * k
+        }
+        return Mat3.mul(Mat3.rotY(yaw), Mat3.rotX(pitch))
+    }
+
+    /** Recenter: snap the anchor to where you look now. */
+    fun reset() { init = false }
+}
+
+/** Rules first: a simple, confidently parsed command runs instantly; only the rest goes to Jev / the LLM. */
+object FastPath {
+    private val MULTI = listOf(" va ", " roi ", " sau do ", " xong ", " then ", " and ", " dong thoi ", " ca ")
+
+    fun accept(text: String, cmd: VoiceCommands.Cmd): Boolean {
+        if (cmd is VoiceCommands.Cmd.Unknown || cmd is VoiceCommands.Cmd.Ask) return false
+        val t = " " + VoiceCommands.fold(text) + " "
+        if (MULTI.any { t.contains(it) }) return false        // multi-step: let the LLM plan it
+        // a search query is free text: only trust rules when the site is explicit
+        if (cmd is VoiceCommands.Cmd.Open && cmd.url.contains("google.com/search")) return false
+        return true
+    }
+}
