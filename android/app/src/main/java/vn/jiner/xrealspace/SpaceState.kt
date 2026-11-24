@@ -75,6 +75,12 @@ object SpaceState {
     var onInputBlur: (() -> Unit)? = null
     /** host mode (Beam without touchscreen): forward page text-field focus to the remote phone; true = handled */
     var remoteFocusSink: ((String) -> Boolean)? = null
+    /** GPS says we are moving fast (bike / motorbike / car): screens hidden, notifications show the app name only */
+    @Volatile var speedLocked = false
+    /** user setting: hide screens when moving fast (default on) */
+    var rideSafety = true
+    /** phone notification currently popped up on the glasses (nod = reply to it) */
+    var toastNotifKey: String? = null
     var remoteBlurSink: (() -> Boolean)? = null
 
     /** longer assistant answer / page summary card (head-locked) */
@@ -93,6 +99,8 @@ object SpaceState {
         fun phoneHome(): Boolean
         fun setCaptions(mode: CaptionMode)
         fun setPrompter(on: Boolean?)
+        /** reply to a phone notification (key null = newest one with a reply box) */
+        fun replyNotif(text: String, key: String?)
     }
     var controller: Controller? = null
 
@@ -162,6 +170,7 @@ object SpaceState {
 
     fun notify(title: String, body: String, color: Int = Colors.CYAN, secs: Double = 4.0, actionable: Boolean = false) {
         toast = Toast(title, body, color, System.currentTimeMillis() + (secs * 1000).toLong(), actionable)
+        toastNotifKey = null   // PhoneNotifs.show sets it again right after for a real notification
     }
 
     fun showCard(title: String, text: String, secs: Double = 25.0) {
@@ -303,6 +312,9 @@ object SpaceState {
             is VoiceCommands.Cmd.HeadLock -> headLocked = cmd.on ?: !headLocked
             VoiceCommands.Cmd.Calibrate -> startWizard()
             VoiceCommands.Cmd.Notify -> demoNotification()
+            VoiceCommands.Cmd.ReadNotifs -> PhoneNotifs.read()
+            is VoiceCommands.Cmd.Reply -> controller?.replyNotif(cmd.text, null)
+            is VoiceCommands.Cmd.MuteNotifs -> PhoneNotifs.mute(cmd.on, cmd.app)
             VoiceCommands.Cmd.Grab -> toggleGrab()
             VoiceCommands.Cmd.Summarize -> controller?.summarizeFocused()
             VoiceCommands.Cmd.ShowGrid -> showGrid(8.0)
@@ -367,6 +379,7 @@ object SpaceState {
             .put("prompterScript", prompterScript)
             .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
+            .put("rideSafety", rideSafety)
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
             .put("jevBaseUrl", jevBaseUrl).put("jevModel", jevModel).put("jevKey", jevKey)
             .put("llmProvider", llmProvider).put("llmBaseUrl", llmBaseUrl).put("llmModel", llmModel).put("llmKey", llmKey)
@@ -385,6 +398,7 @@ object SpaceState {
             intentEngine = runCatching { IntentEngine.valueOf(o.optString("intentEngine", intentEngine.name)) }.getOrDefault(intentEngine)
             sttEngine = runCatching { SttEngine.valueOf(o.optString("sttEngine", sttEngine.name)) }.getOrDefault(sttEngine)
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)
+            rideSafety = o.optBoolean("rideSafety", rideSafety)
             wakePhrases = o.optString("wakePhrases", wakePhrases.joinToString("|")).split("|").map { it.trim() }.filter { it.isNotEmpty() }
                 .ifEmpty { WakeWord.DEFAULT_PHRASES }
             jevBaseUrl = o.optString("jevBaseUrl", jevBaseUrl); jevModel = o.optString("jevModel", jevModel); jevKey = o.optString("jevKey", jevKey)

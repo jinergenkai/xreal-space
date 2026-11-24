@@ -141,6 +141,9 @@ class GlassesService : Service() {
         if (Build.VERSION.SDK_INT >= 29) {
             var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             if (mirror) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            // GPS speed keeps working while another app is in front (Android 10+ needs the location type for that)
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             startForeground(NOTIF_ID, n, types)
         } else startForeground(NOTIF_ID, n)
     }

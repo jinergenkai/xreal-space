@@ -374,4 +374,49 @@ class CoreTest {
         // old phones (v0.5) send HELLO without a PIN -> decoded as empty PIN, rejected
         assertEquals(RemoteProtocol.Msg.Hello("A", 1, ""), RemoteProtocol.decode("HELLO|A|1"))
     }
+
+    @Test fun notificationFeedFiltersDedupesAndMutes() {
+        val f = NotifFeed("vn.jiner.xrealspace")
+        fun n(key: String, pkg: String, app: String, text: String, reply: Boolean = true) = PhoneNotif(key, pkg, app, "An", text, reply, 0)
+        assertTrue(f.add(n("k1", "com.zing.zalo", "Zalo", "Tối nay đi ăn không?")))
+        assertFalse(f.add(n("k1", "com.zing.zalo", "Zalo", "Tối nay đi ăn không?")))   // re-posted, same text
+        assertTrue(f.add(n("k1", "com.zing.zalo", "Zalo", "7h nhé")))                  // same chat, new message
+        assertEquals(1, f.size())
+        assertFalse(f.add(n("x", "vn.jiner.xrealspace", "XREAL Space", "own")))      // our own foreground notification
+        assertFalse(f.add(n("o", "com.spotify.music", "Spotify", "Now playing"), ongoing = true))
+        assertFalse(f.add(PhoneNotif("e", "com.foo", "Foo", "", "", false, 0)))           // empty title+text is dropped
+        assertEquals("com.zing.zalo", f.muteByName("zalo", true))
+        assertFalse(f.add(n("k2", "com.zing.zalo", "Zalo", "muted but stored")))
+        assertEquals(2, f.size())
+        f.muteByName("Zalo", false); f.doNotDisturb = true
+        assertFalse(f.add(n("k3", "com.facebook.orca", "Messenger", "dnd", reply = false)))
+        assertEquals("k2", f.latestRepliable()?.key)
+        val (title, body) = NotifFeed.preview(f.latest()!!, moving = true)
+        assertEquals("Messenger", title); assertFalse(body.contains("dnd"))         // no message text while riding
+        assertTrue(NotifFeed.readout(f.recent()).startsWith("• Messenger: An"))
+    }
+
+    @Test fun speedGuardHasHysteresis() {
+        val g = SpeedGuard()
+        assertFalse(g.update(6.0, 0)); assertFalse(g.update(6.0, 2000))   // 21.6 km/h but not for 3 s yet
+        assertFalse(g.update(2.0, 2500))                                    // dropped below: timer resets
+        assertFalse(g.update(6.0, 3000)); assertTrue(g.update(6.0, 6100)); assertTrue(g.fast)
+        assertFalse(g.update(3.0, 7000))                                    // 10.8 km/h: between thresholds, stays fast
+        assertFalse(g.update(1.0, 8000)); assertTrue(g.update(1.0, 14100)); assertFalse(g.fast)
+        g.update(6.0, 20000); g.update(6.0, 23100); assertTrue(g.fast)
+        assertTrue(g.lost()); assertFalse(g.fast)                           // GPS lost -> screens come back
+    }
+
+    @Test fun notificationVoiceCommands() {
+        assertEquals(VoiceCommands.Cmd.ReadNotifs, VoiceCommands.parse("đọc thông báo"))
+        assertEquals(VoiceCommands.Cmd.ReadNotifs, VoiceCommands.parse("thông báo"))
+        assertEquals(VoiceCommands.Cmd.Reply("Ok 7h nhé"), VoiceCommands.parse("trả lời Ok 7h nhé"))
+        assertEquals(VoiceCommands.Cmd.MuteNotifs(true, "zalo"), VoiceCommands.parse("tắt thông báo Zalo"))
+        assertEquals(VoiceCommands.Cmd.MuteNotifs(true, null), VoiceCommands.parse("im lặng"))
+        assertEquals(VoiceCommands.Cmd.MuteNotifs(false, null), VoiceCommands.parse("bật thông báo"))
+        assertEquals(VoiceCommands.Cmd.Notify, VoiceCommands.parse("thông báo mẫu"))
+        assertEquals(VoiceCommands.Cmd.Map(false), VoiceCommands.parse("tắt bản đồ"))           // old rules unaffected
+        val r = LlmProtocol.parseReply("""{"actions":[{"fn":"reply","text":"đang bận"},{"fn":"mute_notifications","on":true,"app":null}]}""")
+        assertEquals(listOf(VoiceCommands.Cmd.Reply("đang bận"), VoiceCommands.Cmd.MuteNotifs(true, null)), r.cmds)
+    }
 }

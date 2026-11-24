@@ -219,6 +219,16 @@ object Assistant : SpaceState.Controller {
         st.notify("Nhắc chữ", "Cứ đọc, chữ tự chạy theo giọng bạn", Colors.CYAN, 2.5)
     }
 
+    override fun replyNotif(text: String, key: String?) { PhoneNotifs.reply(app, text, key) }
+
+    /** Nod on a message pop-up: listen once, send what was said as the reply. */
+    fun replyByVoice(key: String) {
+        if (!hasMic()) { SpaceState.notify("Micro", "Cấp quyền micro trong app để trả lời bằng giọng", Colors.AMBER, 3.0); return }
+        dictationSink = { text -> if (text.isNotBlank()) PhoneNotifs.reply(app, text, key) }
+        SpaceState.notify("🎤 Nói câu trả lời", "Nói xong im lặng 1 giây là gửi", Colors.CYAN, 6.0)
+        voice.captureCommand()
+    }
+
     fun movePrompter(delta: Int) { prompter?.let { it.move(delta); prompterVersion++ } }
 
     const val MIRROR_URL = "mirror:phone"

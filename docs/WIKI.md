@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.5.1
+Cập nhật: 25/11/2026 · bản 0.6.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -75,7 +75,9 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Ổn định | Ghi crash vào máy, hiện trong Chẩn đoán → Copy gửi lại | Chờ test | 0.5 |
 | Web | Sửa đăng nhập Google (UA không còn "wv") + nút "Mở bằng Chrome" cho trang chặn WebView | Chờ test | 0.5 |
 | Khác | Icon app; script build APK bằng Docker (`android/scripts/build-apk.sh`) | Chờ build | 0.5 |
-| Chưa | Thông báo thật của điện thoại hiện trên kính, trả lời bằng giọng | Chưa | — |
+| Thông báo | Thông báo thật của điện thoại hiện trên kính (Zalo, Messenger, SMS…), bỏ trùng lặp, bỏ thông báo hệ thống | Chờ test | 0.6 |
+| Thông báo | Gật đầu = trả lời bằng giọng, lắc = bỏ qua; "trả lời …", "đọc thông báo", "tắt thông báo Zalo", "im lặng" | Chờ test | 0.6 |
+| An toàn | Đi nhanh hơn ~15 km/h (GPS): ẩn màn hình, thoát rạp phim, thông báo chỉ hiện tên app, không cho trả lời | Chờ test | 0.6 |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
 
@@ -121,6 +123,14 @@ F head-lock · H status · C hiệu chỉnh trục · B đo lại bias · ↑/�
 3. Trên kính hiện **mã ghép đôi 4 số** (hiện lại mỗi khi điện thoại ngắt). Trên điện thoại: mục **Điều khiển từ xa** → nhập mã → **Điều khiển máy kính**. Để trống ô IP = tự tìm; không tìm thấy thì nhập IP của Beam (hiện trên kính / trong Chẩn đoán). Mã được nhớ, lần sau không phải nhập lại.
 4. Khi đã nối: touchpad, cử chỉ 2–3 ngón, nút âm lượng, giữ để nói lệnh, bàn phím (chạm vào ô nhập trên kính → bàn phím điện thoại bật) đều gửi sang Beam.
 5. Chỉ nối được IP mạng nội bộ (192.168.x.x, 10.x.x.x, 172.16–31.x.x, Tailscale 100.64–127.x.x). Sai mã 5 lần liền → máy kính khoá 60 giây. Người lạ không đá được điện thoại đang nối (phải đúng mã mới thay chỗ). Lộ mã thì bấm **Đổi mã** trên máy kính.
+
+**Thông báo điện thoại (bản 0.6):** thẻ Thiết lập → **Đọc thông báo ĐT** → chọn XREAL Space → Cho phép.
+Tin nhắn mới hiện ở góc kính: **gật đầu** = nói câu trả lời (im 1 giây là gửi), **lắc** = bỏ qua. Hoặc nói:
+"đọc thông báo" · "trả lời tối nay 7h nhé" (trả lời tin mới nhất) · "tắt thông báo Zalo" / "bật thông báo Zalo" · "im lặng" / "bật thông báo".
+Trả lời dùng ô trả lời có sẵn trong thông báo của app (giống trả lời từ thanh thông báo), nên app nào không có ô đó thì không trả lời được.
+
+**An toàn khi đi xe:** cấp quyền **Vị trí** (chỉ đọc tốc độ, không lưu, không gửi). Khi đang cắm kính mà đi nhanh hơn ~15 km/h trong 3 giây:
+màn hình ẩn, video thoát toàn màn hình, thông báo chỉ hiện tên app. Chậm dưới ~8 km/h trong 6 giây thì hiện lại. Tắt được ở mục Thông báo & an toàn.
 
 **Đầu:** gật = OK / đặt màn đang cầm / bật-tắt bản đồ · lắc = bỏ qua.
 
@@ -230,6 +240,9 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Mở app khác 5 phút rồi quay lại: kính vẫn bám đầu (IMU chạy nền)
 - [ ] Trang Google đăng nhập: được không; nếu không, "Mở bằng Chrome" + chiếu màn hình
 - [ ] Beam đời đầu: app tự vào chế độ máy chủ; điện thoại "Điều khiển máy kính" tự tìm thấy (hoặc nhập IP)
+- [ ] Cấp "Đọc thông báo ĐT"; nhờ người nhắn Zalo → tin hiện trên kính; gật → nói → người kia nhận được
+- [ ] "đọc thông báo", "tắt thông báo Zalo", "im lặng" có tác dụng
+- [ ] Cấp Vị trí, cắm kính, đi xe máy (người khác lái!) hoặc chạy xe đạp > 15 km/h: màn ẩn, dừng lại thì hiện
 - [ ] Mã ghép đôi: nhập sai → điện thoại báo sai mã, kính hiện mã đúng; nhập đúng → nối; tắt Wi-Fi điện thoại → kính hiện lại mã
 - [ ] Beam: touchpad, 2 ngón về giữa, giữ để nói lệnh, gõ chữ vào ô tìm kiếm qua điện thoại
 - [ ] Nếu app crash: mở lại → Chẩn đoán có mục "LẦN CRASH GẦN NHẤT" → Copy gửi
@@ -246,7 +259,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 - Chiếu màn hình chỉ hiện đúng một thứ đang ở phía trước điện thoại: khi XREAL Space đang mở, ô chiếu hiện chính touchpad.
 - Phụ đề / teleprompter dùng model Vosk nhỏ: nơi ồn hoặc nói nhanh sẽ sai nhiều.
 - Rạp phim dịch chuyển khung video; vài kiểu video (SurfaceView) có thể không bám theo: cần test.
-- Đeo kính khi lái xe máy / ô tô là nguy hiểm: app chưa chặn.
+- Đeo kính khi lái xe máy / ô tô là nguy hiểm: từ 0.6 app ẩn màn khi đi nhanh (GPS), nhưng không thay được ý thức người lái.
 
 **Giới hạn nền tảng — XREAL Beam (đời đầu):**
 
@@ -303,8 +316,9 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 **Code (Claude làm được không cần máy):**
 - [x] Mã ghép đôi cho điều khiển từ xa (0.5.1).
 - [ ] network-security-config: chỉ cho HTTP tới IP nội bộ.
-- [ ] Thông báo thật của điện thoại lên kính (NotificationListener), đọc / trả lời bằng giọng.
-- [ ] Bản đồ GPS thật thay tuyến giả; tự ẩn màn khi đi nhanh.
+- [x] Thông báo thật của điện thoại lên kính, đọc / trả lời bằng giọng (0.6).
+- [x] Ẩn màn khi đi nhanh theo GPS (0.6).
+- [ ] Bản đồ GPS thật thay tuyến giả.
 - [ ] Backend nhỏ giữ key Jev / LLM, đếm lượt (Docker, chạy trên server của Hùng).
 - [ ] Render GL: méo phối cảnh, 3D SBS cho phim 3D.
 
@@ -320,6 +334,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.6.0 | Thông báo thật của điện thoại trên kính + trả lời bằng giọng (gật đầu / "trả lời …"), tắt thông báo theo app, im lặng; ẩn màn khi đi nhanh theo GPS |
 | 25/11/2026 | 0.5.1 | Mã ghép đôi 4 số cho điều khiển từ xa (khoá 60 s sau 5 lần sai, người lạ không đá được máy đang nối); APK build thật lần đầu trên GitHub Actions |
 | 25/11/2026 | repo | Gom về monorepo GitHub `jinergenkai/xreal-space`: `android/` (giữ lịch sử commit), `pc/`, `pythontest/`, wiki ở `docs/`; CI build APK + test Python |
 | 25/11/2026 | 0.5.0 | Điều khiển Beam đời đầu bằng điện thoại qua Wi-Fi; IMU/USB chạy nền ở cấp ứng dụng; thẻ Thiết lập lần đầu; crash log; sửa đăng nhập Google + Mở bằng Chrome; icon; script build Docker; wiki thêm giới hạn nền tảng, nợ kỹ thuật, checklist |

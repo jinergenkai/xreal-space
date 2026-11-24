@@ -174,6 +174,9 @@ Các hàm:
 - captions {mode:"off"|"vi"|"en"|"en_vi"|"vi_en"}   phụ đề trực tiếp / phiên dịch
 - prompter {on:true|false|null}   teleprompter chạy theo giọng đọc
 - back {} / home {}   quay lại / về màn hình chính của điện thoại
+- read_notifications {}   đọc các thông báo mới của điện thoại
+- reply {text}   trả lời tin nhắn mới nhất (Zalo, Messenger, SMS…) bằng nội dung text
+- mute_notifications {on:true|false, app:string|null}   tắt/bật thông báo một app; app null = chế độ im lặng
 - answer {text}   câu hỏi thường: trả lời ngắn (tối đa 3 câu) để hiện lên kính
 Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì dùng answer để hỏi lại.
 """.trimIndent()
@@ -233,6 +236,9 @@ Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì d�
                 "prompter" -> VoiceCommands.Cmd.Prompter(bool(m["on"]))
                 "back" -> VoiceCommands.Cmd.Back
                 "home" -> VoiceCommands.Cmd.Home
+                "read_notifications" -> VoiceCommands.Cmd.ReadNotifs
+                "reply" -> (m["text"] as? String)?.takeIf { it.isNotBlank() }?.let { VoiceCommands.Cmd.Reply(it) }
+                "mute_notifications" -> VoiceCommands.Cmd.MuteNotifs(m["on"] != false, (m["app"] as? String)?.ifBlank { null })
                 "answer" -> (m["text"] as? String)?.let { VoiceCommands.Cmd.Answer(it) }
                 else -> null
             }
@@ -300,6 +306,9 @@ object JevProtocol {
         "captions" to "live captions, subtitles, or translate what people are saying",
         "prompter" to "teleprompter: show my script and scroll it as I read, or stop it",
         "back" to "go back / previous screen on the phone",
+        "read_notifications" to "read my phone notifications / new messages",
+        "reply" to "reply to the latest message with what I say",
+        "mute_notifications" to "mute or unmute notifications, do not disturb",
         "question" to "a general question or chat for the assistant, not a command",
         "none" to "noise, unclear, or not addressed to the app",
     )
@@ -372,6 +381,9 @@ object JevProtocol {
             "captions" -> (VoiceCommands.parse(transcript) as? VoiceCommands.Cmd.Captions) ?: VoiceCommands.Cmd.Captions(if (on == false) CaptionMode.OFF else CaptionMode.VI)
             "prompter" -> VoiceCommands.Cmd.Prompter(on)
             "back" -> VoiceCommands.Cmd.Back
+            "read_notifications" -> VoiceCommands.Cmd.ReadNotifs
+            "reply" -> (VoiceCommands.parse(transcript) as? VoiceCommands.Cmd.Reply) ?: VoiceCommands.Cmd.Reply(transcript)
+            "mute_notifications" -> (VoiceCommands.parse(transcript) as? VoiceCommands.Cmd.MuteNotifs) ?: VoiceCommands.Cmd.MuteNotifs(on != false, null)
             "question" -> VoiceCommands.Cmd.Ask(transcript)
             else -> VoiceCommands.Cmd.Unknown(transcript)
         }

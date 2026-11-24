@@ -300,6 +300,8 @@ class MainActivity : Activity(), TouchpadView.Host {
             append("${mark(GlassesService.canHost(this@MainActivity))} Hiện trên app khác — kính vẫn chạy khi mở Zalo/Netflix\n")
             append("${mark(ControlService.instance != null)} Trợ năng — bấm vào app điện thoại từ kính, nút âm lượng ở mọi app\n")
             append("${mark(notif)} Thông báo — biểu tượng chạy nền\n")
+            append("${mark(NotifListener.isEnabled(this@MainActivity))} Đọc thông báo ĐT — tin Zalo/Messenger hiện lên kính, gật đầu để trả lời\n")
+            append("${mark(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)} Vị trí — chỉ đo tốc độ: ẩn màn khi đi xe (không lưu, không gửi)\n")
             append("${mark(battery)} Không tối ưu pin — Xiaomi/Oppo/Samsung hay tự tắt app chạy nền")
             val maker = android.os.Build.MANUFACTURER.lowercase()
             if (maker in listOf("xiaomi", "redmi", "poco", "oppo", "realme", "vivo")) append("\n  ↳ máy $maker: bật thêm \"Tự khởi chạy\" cho app trong Cài đặt → Ứng dụng")
@@ -324,6 +326,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         if (code == 1 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { afterMicGrant?.invoke() }
+        if (code == 3 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { Sensors.keepAlive(); if (usb.connected) Sensors.startSpeed() }
         refreshSetup()
         afterMicGrant = null
     }
@@ -486,6 +489,7 @@ class MainActivity : Activity(), TouchpadView.Host {
                 append("Gói: ${usb.packets} (IMU ${usb.parsed}, khác ${usb.otherPackets})${if (usb.lastError.isNotEmpty()) "\nLỗi: ${usb.lastError}" else ""}\n")
             append("Hiển thị: $out · khoảng cách %.2f m · FOV %.1f°\n".format(st.config.distanceM, st.config.fovVDeg))
             append("Chế độ: ${st.followMode.title} · web tối ${if (st.darkWeb) "bật" else "tắt"}\n")
+            append("Tốc độ: ${if (Sensors.speedRunning) "%.0f km/h".format(Sensors.speedKmh) else "GPS tắt"}${if (st.speedLocked) " · ĐANG ẨN MÀN (đi nhanh)" else ""} · thông báo ${PhoneNotifs.feed.size()}${if (PhoneNotifs.feed.doNotDisturb) " (im lặng)" else ""}\n")
             append("Màn đang nhìn: ${st.config.screens.getOrNull(st.focusedPanel)?.title ?: "-"}")
             if (st.walkMode) append(" · ĐI BỘ"); if (st.headLocked) append(" · HEAD-LOCKED"); if (!st.showMap) append(" · tắt bản đồ")
         }
@@ -556,6 +560,8 @@ class MainActivity : Activity(), TouchpadView.Host {
         col.addView(setupText)
         col.addView(row(btn("Micro") { withMic { refreshSetup() } }, btn("Hiện trên app khác") { openOverlaySettings() },
             btn("Trợ năng") { openAccessibilitySettings() }))
+        col.addView(row(btn("Đọc thông báo ĐT") { NotifListener.openSettings(this) },
+            btn("Vị trí (an toàn)") { requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 3) }))
         col.addView(row(btn("Thông báo") { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 2) },
             btn("Không tối ưu pin") { openBatterySettings() }))
 
@@ -609,6 +615,20 @@ class MainActivity : Activity(), TouchpadView.Host {
             },
             btn("Tắt") { RemoteLink.stop(); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", false).apply() },
             btn("Đổi mã") { if (RemoteLink.role == RemoteLink.Role.HOST) RemoteLink.newPin(this) }))
+
+        col.addView(label("Thông báo điện thoại & an toàn khi đi xe"))
+        fun rideLabel() = "Ẩn màn khi đi nhanh: ${if (SpaceState.rideSafety) "BẬT" else "TẮT"}"
+        lateinit var rideBtn: Button
+        rideBtn = btn(rideLabel()) {
+            SpaceState.rideSafety = !SpaceState.rideSafety; SpaceState.saveSettings()
+            if (SpaceState.rideSafety) Sensors.startSpeed() else Sensors.stopSpeed()
+            rideBtn.text = rideLabel()
+        }
+        col.addView(row(btn("Đọc thông báo") { PhoneNotifs.read() }, btn("Im lặng bật/tắt") { PhoneNotifs.mute(!PhoneNotifs.feed.doNotDisturb, null) }, rideBtn))
+        col.addView(TextView(this).apply {
+            text = "Nói: \"đọc thông báo\" · \"trả lời …\" · \"tắt thông báo Zalo\" · \"im lặng\". Tin nhắn hiện lên: gật = trả lời bằng giọng, lắc = bỏ qua. Trên ~15 km/h: ẩn màn, thông báo chỉ hiện tên app."
+            setTextColor(Colors.GREY); textSize = 12f
+        })
 
         col.addView(label("Chế độ (xem phim · làm việc · di chuyển)"))
         col.addView(row(btn("Cố định") { SpaceState.setFollow(FollowMode.WORLD) }, btn("Rạp phim") { SpaceState.setFollow(FollowMode.CINEMA) },

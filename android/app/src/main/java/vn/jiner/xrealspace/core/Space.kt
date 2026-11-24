@@ -259,6 +259,12 @@ object VoiceCommands {
         data class HeadLock(val on: Boolean?) : Cmd()
         object Calibrate : Cmd()
         object Notify : Cmd()
+        /** read out the latest phone notifications on the glasses */
+        object ReadNotifs : Cmd()
+        /** reply to the latest notification that has a reply box (Zalo, Messenger, SMS…) */
+        data class Reply(val text: String) : Cmd()
+        /** mute (on=true) / unmute an app's pop-ups; app=null means do-not-disturb for all */
+        data class MuteNotifs(val on: Boolean, val app: String?) : Cmd()
         object Grab : Cmd()
         object Summarize : Cmd()
         object ShowGrid : Cmd()
@@ -346,6 +352,24 @@ object VoiceCommands {
         fun has(vararg k: String) = k.any { Regex("(?:^|\\s)" + Regex.escape(it) + "(?:\\s|$)").containsMatchIn(t) }
         val slot = SlotGrid.parseSlot(t)
 
+        // phone notifications (before generic "tắt …" / "mở …" rules)
+        if (t.startsWith("tra loi ") || t.startsWith("reply ")) {
+            val words = text.trim().split(Regex("\\s+"))
+            val body = words.drop(if (t.startsWith("reply ")) 1 else 2).joinToString(" ").trim()
+            if (body.isNotEmpty()) return Cmd.Reply(body)
+        }
+        if (has("doc thong bao", "thong bao moi", "co tin nhan", "tin nhan moi", "read notifications")) return Cmd.ReadNotifs
+        if (has("im lang", "dung lam phien", "do not disturb")) return Cmd.MuteNotifs(true, null)
+        if (has("tat thong bao", "an thong bao", "mute")) {
+            val app = (if (t.contains("thong bao")) t.substringAfter("thong bao") else t.substringAfter("mute", "")).trim()
+            return Cmd.MuteNotifs(true, app.ifEmpty { null })
+        }
+        if (has("bat thong bao", "bat lai thong bao", "unmute")) {
+            val app = (if (t.contains("thong bao")) t.substringAfter("thong bao") else t.substringAfter("unmute", "")).trim()
+            return Cmd.MuteNotifs(false, app.ifEmpty { null })
+        }
+        if (has("thong bao mau", "demo notification")) return Cmd.Notify
+
         // workspaces
         if (has("luu khong gian", "luu bo cuc", "save workspace")) return Cmd.SaveWorkspace(workspaceName(t))
         if (has("rap phim", "xem phim")) return Cmd.Workspace("giai tri")
@@ -405,7 +429,7 @@ object VoiceCommands {
             has("cam man", "di chuyen man", "keo man") -> Cmd.Grab
             has("khoa dau", "head lock", "theo dau") -> Cmd.HeadLock(null)
             has("hieu chinh", "calibrate") -> Cmd.Calibrate
-            has("thong bao", "notification") -> Cmd.Notify
+            has("thong bao", "notification", "notifications") -> Cmd.ReadNotifs
             has("mo", "open") && siteFromText(t) == null && appName(t).isNotBlank() -> Cmd.LaunchApp(appName(t))
             text.trim().endsWith("?") || has("la gi", "bao nhieu", "the nao", "tai sao", "o dau", "khi nao", "what", "why", "how") -> Cmd.Ask(text)
             else -> Cmd.Unknown(text)

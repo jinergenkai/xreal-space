@@ -330,6 +330,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             g.yaw = gy; g.pitch = gp
         }
         // fullscreen video: fills the glasses screen (scaled), drifts with the cinema anchor
+        if (st.speedLocked && fullView != null) exitFullscreen()   // no film while riding
         if (fullView != null) {
             val cw = (w * st.cinemaScale).toInt(); val ch = (h * st.cinemaScale).toInt()
             val lp = cinema.layoutParams
@@ -343,7 +344,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         val nowMs = SystemClock.uptimeMillis()
         panels.forEachIndexed { i, p ->
             val spec = cfg.screens.getOrNull(i) ?: return@forEachIndexed
-            if (st.walkMode || wz != null || fullView != null) { hide(p.frame); pauseIfStale(p, nowMs); return@forEachIndexed }
+            if (st.walkMode || st.speedLocked || wz != null || fullView != null) { hide(p.frame); pauseIfStale(p, nowMs); return@forEachIndexed }
             val P = Mat3.mul(F, Mat3.mul(Mat3.rotY(spec.yaw), Mat3.rotX(spec.pitch)))
             val pl = Projection.place(C, P, cfg.distanceM, spec.widthM, w, h, cfg.fovVDeg)
             layoutOn(p.frame, pl, p.widthPx + 2.0 * BORDER, p.heightPx + 2.0 * BORDER)
@@ -372,12 +373,14 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             when (g) {
                 HeadGestures.Gesture.NOD -> if (st.grabbedPanel >= 0) st.toggleGrab() else {
                     val t = st.toast
-                    if (t != null && t.actionable) st.notify("Đã trả lời", "\"OK, 7h nhé!\"", Colors.GREEN, 2.5)
+                    val key = st.toastNotifKey
+                    if (t != null && t.actionable && key != null) Assistant.replyByVoice(key)
+                    else if (t != null && t.actionable) st.notify("Đã trả lời", "\"OK, 7h nhé!\"", Colors.GREEN, 2.5)
                     else st.setMap(null)
                 }
                 HeadGestures.Gesture.SHAKE -> {
                     val t = st.toast
-                    st.notify("Lắc đầu", if (t != null && t.actionable) "Đã bỏ qua" else "Đóng", Colors.RED, 1.5)
+                    st.notify("Lắc đầu", if (t != null && t.actionable) "Đã bỏ qua" else "Đóng", Colors.RED, 1.5)   // also clears toastNotifKey
                 }
                 null -> {}
             }
