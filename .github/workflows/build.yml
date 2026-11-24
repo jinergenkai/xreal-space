@@ -3,6 +3,10 @@ on:
   push:
     paths: ["android/**", ".github/workflows/build.yml"]
   workflow_dispatch:
+# a newer push cancels the build still running for an older one (saves minutes)
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,5 +23,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: xreal-space-debug-apk
-          retention-days: 14
+          retention-days: 7
           path: android/app/build/outputs/apk/debug/*.apk
