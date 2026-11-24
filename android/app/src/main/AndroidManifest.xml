@@ -27,6 +27,7 @@
 
     <application
         android:label="XREAL Space"
+        android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
@@ -58,6 +59,7 @@
             android:name=".ControlService"
             android:exported="false"
             android:label="XREAL Space"
+        android:icon="@mipmap/ic_launcher"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

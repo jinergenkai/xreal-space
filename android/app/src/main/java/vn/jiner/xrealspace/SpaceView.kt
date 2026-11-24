@@ -46,6 +46,8 @@ import kotlin.math.roundToInt
  * Works both inside a Presentation on the glasses and full-screen on the phone.
  */
 @SuppressLint("ViewConstructor", "SetJavaScriptEnabled")
+private var googleHintShown = false
+
 class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(ctx), Choreographer.FrameCallback {
     companion object {
         const val BASE_W = 1280
@@ -92,12 +94,18 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(true); builtInZoomControls = true; displayZoomControls = false
+                // Google refuses sign-in when the UA says "; wv" (embedded WebView). Look like plain Chrome.
+                userAgentString = userAgentString.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+ "), "")
             }
             applyDark(web, false)
             web.addJavascriptInterface(InputBridge(), "XSpace")
             web.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                     val s = r.url.scheme ?: return true
+                    if (r.url.host == "accounts.google.com" && !googleHintShown) {
+                        googleHintShown = true
+                        SpaceState.notify("Đăng nhập Google", "Nếu Google chặn: bấm \"Mở bằng Chrome\" rồi xem qua màn hình điện thoại", Colors.AMBER, 6.0)
+                    }
                     return s != "http" && s != "https" // keep web navigation inside the panel, block intent:// etc.
                 }
                 override fun onPageFinished(v: WebView, url: String) {
@@ -134,8 +142,10 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
 
     /** Called by page JS when a text field gets / loses focus (binder thread -> main). */
     inner class InputBridge {
-        @JavascriptInterface fun focus(kind: String, value: String) { post { SpaceState.onInputFocus?.invoke(value) } }
-        @JavascriptInterface fun blur() { post { SpaceState.onInputBlur?.invoke() } }
+        @JavascriptInterface fun focus(kind: String, value: String) {
+            post { if (SpaceState.remoteFocusSink?.invoke(value) != true) SpaceState.onInputFocus?.invoke(value) }
+        }
+        @JavascriptInterface fun blur() { post { if (SpaceState.remoteBlurSink?.invoke() != true) SpaceState.onInputBlur?.invoke() } }
     }
 
     @Suppress("DEPRECATION")

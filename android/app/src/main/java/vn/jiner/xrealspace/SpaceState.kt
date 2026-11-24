@@ -73,6 +73,9 @@ object SpaceState {
     /** a text field inside a page got / lost focus -> phone keyboard (set by MainActivity) */
     var onInputFocus: ((String) -> Unit)? = null
     var onInputBlur: (() -> Unit)? = null
+    /** host mode (Beam without touchscreen): forward page text-field focus to the remote phone; true = handled */
+    var remoteFocusSink: ((String) -> Boolean)? = null
+    var remoteBlurSink: (() -> Boolean)? = null
 
     /** longer assistant answer / page summary card (head-locked) */
     var cardTitle = ""
@@ -126,6 +129,7 @@ object SpaceState {
     fun init(ctx: Context) {
         if (prefsCtx != null) return
         prefsCtx = ctx.applicationContext
+        CrashLog.install(ctx)
         config = load(ctx)
         loadSettings(ctx)
     }
@@ -154,6 +158,7 @@ object SpaceState {
     }
 
     fun logText(): String = synchronized(logLines) { logLines.joinToString("\n") }
+    fun recentLog(n: Int): String = synchronized(logLines) { logLines.toList().takeLast(n).joinToString("\n") }
 
     fun notify(title: String, body: String, color: Int = Colors.CYAN, secs: Double = 4.0, actionable: Boolean = false) {
         toast = Toast(title, body, color, System.currentTimeMillis() + (secs * 1000).toLong(), actionable)

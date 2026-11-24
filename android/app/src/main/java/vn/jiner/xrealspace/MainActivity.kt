@@ -35,6 +35,7 @@ import android.text.TextWatcher
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import vn.jiner.xrealspace.core.FastPath
+import vn.jiner.xrealspace.core.RemoteProtocol
 import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.VoiceCommands
 import vn.jiner.xrealspace.core.WakeWord
@@ -62,8 +63,8 @@ class MainActivity : Activity(), TouchpadView.Host {
         /** true while this activity is in front (the Accessibility key filter only acts when it is NOT) */
         @Volatile var inForeground = false; private set
     }
-    private lateinit var usb: GlassesUsb
-    private lateinit var phoneImu: PhoneImu
+    private val usb: GlassesUsb get() = Sensors.usb
+    private val phoneImu: PhoneImu get() = Sensors.phone
     private lateinit var dm: DisplayManager
     private val ui = Handler(Looper.getMainLooper())
 
@@ -107,13 +108,13 @@ class MainActivity : Activity(), TouchpadView.Host {
         SpaceState.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // plugging the glasses in = connect IMU + show the space on them + phone becomes the touchpad, no buttons
-        usb = GlassesUsb(this) { ui.post { refreshStatus(); if (usb.connected && started && wantGlassesOutput) showOnGlasses(quiet = true) } }
-        phoneImu = PhoneImu(this)
+        Sensors.init(this)
+        Sensors.listener = { refreshStatus(); refreshSetup(); if (usb.connected && started && wantGlassesOutput) showOnGlasses(quiet = true) }
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         Assistant.init(this)
         Assistant.mirrorRequester = { after -> requestMirror(after) }
         buildUi()
-        usb.register()
+        setupRemote()
         dm.registerDisplayListener(displayListener, ui)
         SpaceState.log("App start. Android ${android.os.Build.VERSION.RELEASE} / ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         connectGlasses()
@@ -136,7 +137,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         if (SpaceState.wakeEnabled && hasMic()) voice.startWake()
     }
 
-    override fun onResume() { super.onResume(); inForeground = true }
+    override fun onResume() { super.onResume(); inForeground = true; refreshSetup() }
     override fun onPause() { inForeground = false; super.onPause() }
 
     override fun onStop() {
@@ -152,7 +153,7 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     override fun onDestroy() {
         dm.unregisterDisplayListener(displayListener)
-        usb.unregister(); usb.close(); phoneImu.stop()
+        Sensors.listener = null   // USB/IMU live in Sensors (process-wide) and keep running for GlassesService
         Assistant.mirrorRequester = null
         phoneSpace?.destroy()
         super.onDestroy()
@@ -164,13 +165,12 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     // ------------------------------------------------------------------ actions
     private fun connectGlasses() {
-        if (usb.connect()) { phoneImu.stop() }
+        Sensors.connectGlasses()
         refreshStatus()
     }
 
     private fun usePhoneSensors() {
-        usb.close()
-        if (phoneImu.start()) SpaceState.notify("Cảm biến điện thoại", "Đặt máy yên 1 giây để đo bias", Colors.CYAN, 3.0)
+        if (Sensors.usePhone()) SpaceState.notify("Cảm biến điện thoại", "Đặt máy yên 1 giây để đo bias", Colors.CYAN, 3.0)
     }
 
     /** External displays that can host a Presentation (the glasses when plugged into a DP-alt-mode port). */
@@ -276,6 +276,42 @@ class MainActivity : Activity(), TouchpadView.Host {
         showTouchpad(true)
     }
 
+    /** Sites that block WebView (Google sign-in, some banks): open in the real browser, view it via the phone mirror. */
+    private fun openInBrowser() {
+        val url = space?.focusedWeb()?.url ?: urlField.text.toString().ifBlank { return }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            SpaceState.notify("Đã mở trình duyệt", "Nói \"màn hình điện thoại\" để xem nó trên kính", Colors.CYAN, 4.0)
+        } catch (e: Exception) { SpaceState.notify("Không mở được", e.message ?: "", Colors.AMBER, 3.0) }
+    }
+
+    private var setupText: TextView? = null
+
+    /** What the user still has to allow, in one line each (the app works partially without each). */
+    private fun refreshSetup() {
+        val t = setupText ?: return
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        fun mark(ok: Boolean) = if (ok) "✓" else "✗"
+        val notif = android.os.Build.VERSION.SDK_INT < 33 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
+        val battery = pm.isIgnoringBatteryOptimizations(packageName)
+        t.text = buildString {
+            append("${mark(usb.connected)} Kính đã nối (cắm kính, bấm Cho phép khi Android hỏi USB)\n")
+            append("${mark(hasMic())} Micro — lệnh giọng nói, phụ đề, nhắc chữ\n")
+            append("${mark(GlassesService.canHost(this@MainActivity))} Hiện trên app khác — kính vẫn chạy khi mở Zalo/Netflix\n")
+            append("${mark(ControlService.instance != null)} Trợ năng — bấm vào app điện thoại từ kính, nút âm lượng ở mọi app\n")
+            append("${mark(notif)} Thông báo — biểu tượng chạy nền\n")
+            append("${mark(battery)} Không tối ưu pin — Xiaomi/Oppo/Samsung hay tự tắt app chạy nền")
+            val maker = android.os.Build.MANUFACTURER.lowercase()
+            if (maker in listOf("xiaomi", "redmi", "poco", "oppo", "realme", "vivo")) append("\n  ↳ máy $maker: bật thêm \"Tự khởi chạy\" cho app trong Cài đặt → Ứng dụng")
+        }
+    }
+
+    private fun openBatterySettings() {
+        try { startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        catch (_: Exception) { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+        SpaceState.notify("Pin", "Tìm XREAL Space → Không tối ưu hoá", Colors.CYAN, 4.0)
+    }
+
     private fun openOverlaySettings() {
         startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
     }
@@ -288,6 +324,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         if (code == 1 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { afterMicGrant?.invoke() }
+        refreshSetup()
         afterMicGrant = null
     }
 
@@ -307,7 +344,7 @@ class MainActivity : Activity(), TouchpadView.Host {
             KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT -> if (Assistant.prompter != null) Assistant.movePrompter(5) else return super.onKeyDown(keyCode, event)
             KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_DPAD_LEFT -> if (Assistant.prompter != null) Assistant.movePrompter(-5) else return super.onKeyDown(keyCode, event)
             KeyEvent.KEYCODE_P -> Assistant.setPrompter(null)
-            KeyEvent.KEYCODE_VOLUME_DOWN -> st.recenter()
+            KeyEvent.KEYCODE_VOLUME_DOWN -> if (RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Key("recenter")) else st.recenter()
             KeyEvent.KEYCODE_R -> st.recenter()
             KeyEvent.KEYCODE_W -> st.toggleWalk()
             KeyEvent.KEYCODE_M -> st.setMap(null)
@@ -326,10 +363,32 @@ class MainActivity : Activity(), TouchpadView.Host {
     }
 
     private var volLongPressed = false
+    private var remoteText: TextView? = null
+
+    /** A box with no touchscreen (original XREAL Beam) can only be driven from a phone: start the host server. */
+    private fun setupRemote() {
+        RemoteLink.onChange = {
+            remoteText?.text = "Trạng thái: ${RemoteLink.status}" + if (RemoteLink.role == RemoteLink.Role.HOST) " · IP máy này: ${localIp()}" else ""
+        }
+        RemoteLink.onFocus = { v -> onPageInputFocus(v) }
+        RemoteLink.onBlur = { hideKeyboard() }
+        val noTouch = !packageManager.hasSystemFeature("android.hardware.touchscreen")
+        if (noTouch || getSharedPreferences("remote", MODE_PRIVATE).getBoolean("host", false)) {
+            RemoteLink.startHost(this)
+            if (noTouch) SpaceState.log("no touchscreen -> remote host mode")
+        }
+        RemoteLink.onChange?.invoke()
+    }
+
+    private fun localIp(): String = try {
+        java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
+            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress ?: "?"
+    } catch (_: Exception) { "?" }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-            if (!volLongPressed && space?.clickAtGaze() != true) SpaceState.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0)
+            if (!volLongPressed && RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Key("click"))
+            else if (!volLongPressed && space?.clickAtGaze() != true) SpaceState.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0)
             volLongPressed = false
             return true
         }
@@ -345,16 +404,19 @@ class MainActivity : Activity(), TouchpadView.Host {
     }
 
     // ------------------------------------------------------------------ eyes-free touchpad + phone keyboard
-    override fun space(): SpaceView? = space
+    override fun pad(action: Int, dx: Float, dy: Float) {
+        if (RemoteLink.isRemote) RemoteLink.pad(action, dx, dy) else space?.touchpad(action, dx, dy)
+    }
     override fun onHold() {
         if (kbActive) {
             Assistant.dictationSink = { t -> val cur = kbField.text.toString(); kbField.setText(if (cur.isBlank()) t else "$cur $t"); kbField.setSelection(kbField.text.length) }
             withMic { voice.captureCommand() }
         } else pushToTalk()
     }
-    override fun onTwoTap() = SpaceState.recenter()
-    override fun onThreeTap() = SpaceState.setFollow(SpaceState.followMode.next())
+    override fun onTwoTap() { if (RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.TwoTap) else SpaceState.recenter() }
+    override fun onThreeTap() { if (RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.ThreeTap) else SpaceState.setFollow(SpaceState.followMode.next()) }
     override fun onSwipe2(dx: Float, dy: Float) {
+        if (RemoteLink.isRemote) { RemoteLink.send(RemoteProtocol.Msg.Swipe2(dx, dy)); return }
         if (Assistant.prompter != null && kotlin.math.abs(dx) >= kotlin.math.abs(dy)) { Assistant.movePrompter(if (dx < 0) 8 else -8); return }
         if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) { if (dx < 0) space?.back() else space?.forward() }
         else if (dy < 0) SpaceState.showGrid(6.0) else SpaceState.toggleWalk()
@@ -393,9 +455,16 @@ class MainActivity : Activity(), TouchpadView.Host {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-                override fun afterTextChanged(e: Editable?) { if (!kbProgrammatic) space?.setFocusedInputValue(e?.toString() ?: "") }
+                override fun afterTextChanged(e: Editable?) {
+                    if (kbProgrammatic) return
+                    val v = e?.toString() ?: ""
+                    if (RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Text(v)) else space?.setFocusedInputValue(v)
+                }
             })
-            setOnEditorActionListener { _, _, _ -> space?.typeText("", true); hideKeyboard(); true }
+            setOnEditorActionListener { _, _, _ ->
+                if (RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Enter) else space?.typeText("", true)
+                hideKeyboard(); true
+            }
         }
         fl.addView(kbField, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         fl.addView(btn("⚙") { showTouchpad(false) }.apply { alpha = 0.5f },
@@ -440,6 +509,8 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     private fun refreshDiag() {
         val sb = StringBuilder()
+        CrashLog.read().takeIf { it.isNotEmpty() }?.let { sb.append("== LẦN CRASH GẦN NHẤT ==\n").append(it.take(4000)).append("\n\n") }
+        sb.append("== Điều khiển từ xa ==\n${RemoteLink.role} · ${RemoteLink.status}\n\n")
         sb.append("== Màn hình (DisplayManager) ==\n")
         for (d in dm.displays) {
             val mode = d.mode
@@ -479,6 +550,14 @@ class MainActivity : Activity(), TouchpadView.Host {
         statusText = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f; typeface = Typeface.MONOSPACE; setPadding(0, dp(8), 0, dp(4)) }
         col.addView(statusText)
 
+        col.addView(label("Thiết lập lần đầu"))
+        setupText = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f; setPadding(0, 0, 0, dp(4)) }
+        col.addView(setupText)
+        col.addView(row(btn("Micro") { withMic { refreshSetup() } }, btn("Hiện trên app khác") { openOverlaySettings() },
+            btn("Trợ năng") { openAccessibilitySettings() }))
+        col.addView(row(btn("Thông báo") { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 2) },
+            btn("Không tối ưu pin") { openBatterySettings() }))
+
         col.addView(label("Nguồn & hiển thị"))
         col.addView(row(btn("Kết nối kính (USB)") { connectGlasses() }, btn("Dùng cảm biến ĐT") { usePhoneSensors() }))
         col.addView(row(btn("Chiếu lên kính") { showOnGlasses() }, btn("Xem trên màn hình này") { showOnPhone() }))
@@ -489,9 +568,9 @@ class MainActivity : Activity(), TouchpadView.Host {
             var x0 = 0f; var y0 = 0f
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; space?.touchpad(MotionEvent.ACTION_DOWN, 0f, 0f) }
-                    MotionEvent.ACTION_MOVE -> space?.touchpad(MotionEvent.ACTION_MOVE, e.x - x0, e.y - y0)
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> space?.touchpad(e.actionMasked, e.x - x0, e.y - y0)
+                    MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; pad(MotionEvent.ACTION_DOWN, 0f, 0f) }
+                    MotionEvent.ACTION_MOVE -> pad(MotionEvent.ACTION_MOVE, e.x - x0, e.y - y0)
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pad(e.actionMasked, e.x - x0, e.y - y0)
                 }
                 true
             }
@@ -501,6 +580,24 @@ class MainActivity : Activity(), TouchpadView.Host {
             text = "Nút âm lượng: + = click · − = về giữa. Gật đầu = OK/bật-tắt bản đồ, lắc đầu = bỏ qua."
             setTextColor(Colors.GREY); textSize = 12f; setPadding(0, dp(4), 0, 0)
         })
+
+        col.addView(label("Điều khiển từ xa qua Wi-Fi (cho Beam đời đầu / máy không màn cảm ứng)"))
+        remoteText = TextView(this).apply { setTextColor(Colors.GREY); textSize = 12f }
+        col.addView(remoteText)
+        val ipField = EditText(this).apply {
+            hint = "IP máy kính, vd 192.168.1.23 (để trống = tự tìm)"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY)
+            setText(getSharedPreferences("remote", MODE_PRIVATE).getString("ip", ""))
+        }
+        col.addView(ipField)
+        col.addView(row(
+            btn("Làm máy chủ (máy nối kính)") { RemoteLink.startHost(this); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", true).apply() },
+            btn("Điều khiển máy kính") {
+                val ip = ipField.text.toString().trim()
+                getSharedPreferences("remote", MODE_PRIVATE).edit().putString("ip", ip).putBoolean("host", false).apply()
+                if (ip.isEmpty()) RemoteLink.discoverAndConnect(this) else RemoteLink.connect(ip)
+                showTouchpad(true)
+            },
+            btn("Tắt") { RemoteLink.stop(); getSharedPreferences("remote", MODE_PRIVATE).edit().putBoolean("host", false).apply() }))
 
         col.addView(label("Chế độ (xem phim · làm việc · di chuyển)"))
         col.addView(row(btn("Cố định") { SpaceState.setFollow(FollowMode.WORLD) }, btn("Rạp phim") { SpaceState.setFollow(FollowMode.CINEMA) },
@@ -535,7 +632,8 @@ class MainActivity : Activity(), TouchpadView.Host {
         })
         col.addView(row(btn("◀ Back") { space?.focusedWeb()?.let { if (it.canGoBack()) it.goBack() } },
             btn("▶ Tới") { space?.focusedWeb()?.let { if (it.canGoForward()) it.goForward() } },
-            btn("⟳ Tải lại") { space?.focusedWeb()?.reload() }))
+            btn("⟳ Tải lại") { space?.focusedWeb()?.reload() },
+            btn("Mở bằng Chrome") { openInBrowser() }))
         typeField = EditText(this).apply { hint = "Gõ chữ vào ô đang chọn trên trang"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY) }
         col.addView(row(typeField, btn("Gõ") { space?.typeText(typeField.text.toString(), false); typeField.setText("") },
             btn("Enter") { space?.typeText(typeField.text.toString(), true); typeField.setText("") }).apply {
@@ -647,7 +745,8 @@ class MainActivity : Activity(), TouchpadView.Host {
         diagText = TextView(this).apply { setTextColor(0xFF9FB3C8.toInt()); textSize = 11f; typeface = Typeface.MONOSPACE; setTextIsSelectable(true) }
         col.addView(diagText)
         col.addView(label("Cài đặt"))
-        col.addView(row(btn("Reset bố cục") { SpaceState.resetLayout() }, btn("Reset hiệu chỉnh trục") { SpaceState.resetCalibration() }))
+        col.addView(row(btn("Reset bố cục") { SpaceState.resetLayout() }, btn("Reset hiệu chỉnh trục") { SpaceState.resetCalibration() },
+            btn("Xoá crash log") { CrashLog.clear(); refreshDiag() }))
 
         root.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         backBtn = btn("⚙ Điều khiển") { leavePhoneScreen(); if (glassesDisplay() != null) showOnGlasses(quiet = true) }.apply {

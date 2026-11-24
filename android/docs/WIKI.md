@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.4.0
+Cập nhật: 25/11/2026 · bản 0.5.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -64,6 +64,13 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Teleprompter | Kịch bản chạy theo giọng đọc (Vosk vi/en), lùi/tới bằng vuốt 2 ngón | Chờ test | 0.4 |
 | Phụ đề | Phụ đề trực tiếp tiếng Việt / tiếng Anh (offline) | Chờ test | 0.4 |
 | Phụ đề | Phiên dịch Anh → Việt, Việt → Anh (cần LLM) | Chờ test | 0.4 |
+| Beam đời đầu | Điện thoại điều khiển qua Wi-Fi: touchpad, nói lệnh (nhận giọng trên điện thoại), bàn phím, nút âm lượng | Chờ test | 0.5 |
+| Beam đời đầu | Máy không có màn cảm ứng tự bật chế độ máy chủ; điện thoại tự tìm máy kính trong Wi-Fi (hoặc nhập IP) | Chờ test | 0.5 |
+| Ổn định | Đọc IMU/USB chạy ở cấp ứng dụng + service nền, không chết khi Android đóng màn điều khiển | Chờ test | 0.5 |
+| Ổn định | Thẻ "Thiết lập lần đầu" (✓/✗ từng quyền + nút mở cài đặt), nhắc Tự khởi chạy trên Xiaomi/Oppo/Vivo | Chờ test | 0.5 |
+| Ổn định | Ghi crash vào máy, hiện trong Chẩn đoán → Copy gửi lại | Chờ test | 0.5 |
+| Web | Sửa đăng nhập Google (UA không còn "wv") + nút "Mở bằng Chrome" cho trang chặn WebView | Chờ test | 0.5 |
+| Khác | Icon app; script build APK bằng Docker (`scripts/build-apk.sh`) | Chờ build | 0.5 |
 | Chưa | Thông báo thật của điện thoại hiện trên kính, trả lời bằng giọng | Chưa | — |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
@@ -103,6 +110,13 @@ F head-lock · H status · C hiệu chỉnh trục · B đo lại bias · ↑/�
 **Teleprompter:** dán kịch bản vào ô Teleprompter → **▶ Bắt đầu** (hoặc nói "bật nhắc chữ"). Cứ đọc, chữ tự chạy; từ sắp đọc tô vàng. Kịch bản có dấu tiếng Việt dùng model Việt, không dấu dùng model Anh.
 
 **Phụ đề:** chọn **Phụ đề Việt**, **English**, **Dịch Anh → Việt** hoặc **Dịch Việt → Anh** (hoặc nói "bật phụ đề", "dịch tiếng Anh", "tắt phụ đề"). Lần đầu tải model ngôn ngữ đó (~32–40 MB). Dịch cần cấu hình LLM.
+
+**XREAL Beam đời đầu (không màn hình) — điều khiển bằng điện thoại qua Wi-Fi (bản 0.5):**
+1. Cài app lên cả Beam (sideload APK) và điện thoại. Beam và điện thoại cùng một Wi-Fi (hoặc điện thoại phát hotspot cho Beam).
+2. Trên Beam: app tự nhận ra máy không có màn cảm ứng và bật **máy chủ** (cổng 47800). Máy có màn hình thì bấm **Làm máy chủ (máy nối kính)**.
+3. Trên điện thoại: mục **Điều khiển từ xa** → **Điều khiển máy kính**. Để trống ô IP = tự tìm; không tìm thấy thì nhập IP của Beam (hiện trên kính ở dòng trạng thái / trong Chẩn đoán).
+4. Khi đã nối: touchpad, cử chỉ 2–3 ngón, nút âm lượng, giữ để nói lệnh, bàn phím (chạm vào ô nhập trên kính → bàn phím điện thoại bật) đều gửi sang Beam.
+5. Chỉ nối được IP mạng nội bộ (192.168.x.x, 10.x.x.x, 172.16–31.x.x, Tailscale 100.64–127.x.x). Không có mật khẩu: đừng bật máy chủ ở Wi-Fi công cộng.
 
 **Đầu:** gật = OK / đặt màn đang cầm / bật-tắt bản đồ · lắc = bỏ qua.
 
@@ -182,7 +196,11 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 | `GlassesService.kt` | Giữ kính chạy khi mở app khác (overlay), chiếu màn hình điện thoại (MediaProjection), Trợ năng (bấm vào app, nút âm lượng) |
 | `core/Assist.kt` | Teleprompter theo giọng, dòng phụ đề, quy đổi toạ độ ô chiếu → điện thoại, tìm app theo tên |
 | `SpaceState.kt` · `MainActivity.kt` | Trạng thái chung + lưu cài đặt · màn điều khiển, Presentation, bàn phím, phím tắt |
-| `app/src/test/.../CoreTest.kt` | 22 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
+| `Sensors.kt` | Giữ GlassesUsb + PhoneImu ở cấp ứng dụng; bật service nền khi có kính |
+| `core/Remote.kt` · `RemoteLink.kt` | Giao thức điều khiển từ xa (1 dòng / lệnh) · máy chủ TCP + NSD trên Beam, client trên điện thoại |
+| `CrashLog.kt` | Ghi lần crash gần nhất vào máy |
+| `scripts/build-apk.sh` | Build APK bằng Docker, không cần Android Studio |
+| `app/src/test/.../CoreTest.kt` | 23 test lõi, có 1 test trên 4 giây dữ liệu Air 2 thật |
 
 ## 7. Checklist test trên Beam Pro / điện thoại
 
@@ -204,36 +222,100 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Netflix trong ô điện thoại: hình có bị đen không (DRM)
 - [ ] Teleprompter: dán đoạn văn, đọc to, chữ có chạy theo không
 - [ ] Phụ đề Việt khi người khác nói; Dịch Anh → Việt với video tiếng Anh (cần LLM)
+- [ ] Thẻ Thiết lập lần đầu: các dòng ✗ chuyển ✓ sau khi cấp quyền
+- [ ] Mở app khác 5 phút rồi quay lại: kính vẫn bám đầu (IMU chạy nền)
+- [ ] Trang Google đăng nhập: được không; nếu không, "Mở bằng Chrome" + chiếu màn hình
+- [ ] Beam đời đầu: app tự vào chế độ máy chủ; điện thoại "Điều khiển máy kính" tự tìm thấy (hoặc nhập IP)
+- [ ] Beam: touchpad, 2 ngón về giữa, giữ để nói lệnh, gõ chữ vào ô tìm kiếm qua điện thoại
+- [ ] Nếu app crash: mở lại → Chẩn đoán có mục "LẦN CRASH GẦN NHẤT" → Copy gửi
 - [ ] Sau 15 phút dùng: máy nóng tới đâu, pin tụt bao nhiêu
 - [ ] Gửi lại: Chẩn đoán → Copy, kèm bước nào được / không
 
 Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, cầm điện thoại như cửa sổ.
 
-## 8. Giới hạn đã biết & lộ trình
+## 8. Giới hạn đã biết
 
-**Giới hạn:**
+**Của app hiện tại:**
 - Chỉ 3DoF, hiển thị mono; màn đặt kiểu "billboard": đúng vị trí, cỡ, nghiêng đầu, nhưng không méo phối cảnh khi nhìn xiên.
 - Yaw vẫn trôi chậm: về giữa bằng 2 ngón chạm hoặc nút −.
-- App gốc hiện qua chiếu màn hình điện thoại: app có DRM (Netflix, một số app ngân hàng) có thể ra màn đen. Video có DRM trong WebView cũng có thể không chạy.
 - Chiếu màn hình chỉ hiện đúng một thứ đang ở phía trước điện thoại: khi XREAL Space đang mở, ô chiếu hiện chính touchpad.
-- Beam Pro dùng NebulaOS: cửa sổ overlay lên kính và chiếu màn hình có chạy được không: cần test.
 - Phụ đề / teleprompter dùng model Vosk nhỏ: nơi ồn hoặc nói nhanh sẽ sai nhiều.
-- Rạp phim hiện bằng cách dịch chuyển khung video; với vài kiểu video (SurfaceView) có thể không bám theo được: cần test.
-- Beam Pro có thể giữ cổng HID của kính, làm app không đọc được IMU: cần test bằng thẻ chẩn đoán.
+- Rạp phim dịch chuyển khung video; vài kiểu video (SurfaceView) có thể không bám theo: cần test.
 - Đeo kính khi lái xe máy / ô tô là nguy hiểm: app chưa chặn.
 
-**Lộ trình đề xuất:**
-1. Build + test trên Beam Pro, sửa theo log chẩn đoán.
-2. Backend giữ key AI, đếm lượt, gói Premium.
-3. Thông báo thật của điện thoại trên kính, trả lời tin nhắn bằng giọng.
-4. Bản đồ GPS thật, chặn hiển thị khi đi nhanh.
-5. Render GL: méo phối cảnh, 3D stereo SBS.
-6. Chạy trên XREAL Beam (đời đầu, không màn hình): điện thoại làm touchpad qua Wi-Fi.
+**Giới hạn nền tảng — XREAL Beam (đời đầu):**
 
-## 9. Nhật ký phiên bản
+| Giới hạn | Ảnh hưởng | Cách app xử lý |
+| --- | --- | --- |
+| Không có màn hình cảm ứng | Không bấm được nút trong app, không có touchpad | Điện thoại làm remote qua Wi-Fi (bản 0.5) |
+| Không có Play Store, không có Google Play Services | Phải sideload APK; Google STT có thể không có | Dùng Vosk offline; nhận giọng chạy trên điện thoại khi làm remote |
+| Hệ điều hành tuỳ biến cũ (Android ~11, chưa xác nhận) | Overlay, MediaProjection, Trợ năng có thể bị khoá | Cần test; nếu khoá thì chỉ dùng phần web trong app |
+| Beam có chế độ "neo màn hình" 3DoF riêng | Có thể giữ cổng IMU của kính → app không đọc được | Thử tắt chế độ của Beam; xem thẻ Chẩn đoán |
+| Mic của Beam / kính | Chưa biết app có lấy được không | Mic điện thoại qua remote |
+| Chip yếu, pin nhỏ | Nhiều WebView cùng lúc có thể giật | Tạm dừng màn khuất (đã có); nên ≤ 3–4 màn |
+
+**Giới hạn nền tảng — Android (điện thoại) & Beam Pro:**
+
+| Giới hạn | Ảnh hưởng | Ghi chú |
+| --- | --- | --- |
+| Điện thoại phải có cổng USB-C xuất hình (DP Alt Mode) | Máy không xuất hình thì kính không hiện gì | Samsung S/Note, Pixel 8+, nhiều máy cao cấp có; máy tầm trung thường không. Xiaomi 13C: nhiều khả năng không |
+| Beam Pro (NebulaOS) tự chiếu "Air Casting" | Có thể đè hoặc tranh màn với app | Tắt "Default Air Casting" trong My Glasses; cần test |
+| Chiếu màn hình (MediaProjection) | Hỏi đồng ý mỗi lần bật; Android 14 chỉ 1 màn ảo / lần đồng ý | Đã xử lý: 1 VirtualDisplay, đổi bề mặt khi cần |
+| App có DRM (Netflix, Disney+, vài app ngân hàng) | Ô chiếu ra màn đen | Không vượt được; xem Netflix bằng web trong ô (nếu web cho) |
+| Trợ năng + QUERY_ALL_PACKAGES | Google Play soi rất kỹ, dễ bị từ chối | Phát hành APK ngoài Play, hoặc tách bản Play không có 2 quyền này |
+| Hãng điện thoại tự tắt app chạy nền (Xiaomi, Oppo, Vivo, Samsung) | Kính đứng hình khi tắt màn / mở app khác lâu | Thẻ Thiết lập: không tối ưu pin + Tự khởi chạy |
+| Một app giữ mic tại một thời điểm | Mở app khác dùng mic (gọi điện, Zalo voice) → mất lệnh giọng | Không có cách sạch; app nhường mic khi bị chiếm |
+| Google chặn đăng nhập trong WebView | Gmail, YouTube đăng nhập có thể lỗi | Đã đổi UA; vẫn lỗi thì "Mở bằng Chrome" + chiếu màn hình |
+| Kính chỉ 3DoF, không camera | Không bám vật thật, không nhận tay | Giới hạn phần cứng Air 2 |
+| Nóng & pin | Xuất hình + nhiều WebView + mic liên tục tốn pin nhanh | Cần đo khi test (mục 7) |
+
+## 9. Nợ kỹ thuật
+
+| # | Nợ | Mức | Trạng thái |
+| --- | --- | --- | --- |
+| 1 | USB/IMU nằm trong Activity → Android đóng màn điều khiển là mất tracking | Cao | **Đã trả (0.5)**: `Sensors` + service nền |
+| 2 | Chưa từng build thật; code Android chỉ được kiểm tra kiểu với thư viện giả (stub) | Cao | Còn — cần build lần đầu và sửa lỗi build |
+| 3 | Chưa chạy trên máy thật nào (điện thoại, Beam, Beam Pro) | Cao | Còn — làm theo mục 7 |
+| 4 | API key Jev / LLM lưu thường trong máy (SharedPreferences), chưa mã hoá | Trung bình | Còn — chuyển sang backend giữ key (mục 10) |
+| 5 | Cho phép HTTP không mã hoá (`usesCleartextTraffic`) để dùng Ollama trong mạng nhà | Trung bình | Còn — giới hạn bằng network-security-config chỉ cho IP nội bộ |
+| 6 | Điều khiển từ xa qua Wi-Fi chưa có mã ghép đôi / mật khẩu | Trung bình | Còn — thêm mã 4 số hiện trên kính |
+| 7 | Đăng nhập Google trong WebView | Trung bình | Đã giảm (0.5): đổi UA + mở Chrome; chưa chắc hết |
+| 8 | Chưa có hướng dẫn lần đầu | Thấp | **Đã trả (0.5)**: thẻ Thiết lập lần đầu |
+| 9 | Chưa có icon, crash không ai biết | Thấp | **Đã trả (0.5)**: icon + crash log |
+| 10 | Tên "XREAL" là thương hiệu của hãng | Thấp (cao nếu phát hành) | Còn — đổi tên trước khi đưa người ngoài dùng |
+| 11 | `MainActivity.kt` quá dài (UI dựng bằng code, ~800 dòng) | Thấp | Còn — tách màn cài đặt khi UI ổn định |
+| 12 | Quyền Trợ năng / QUERY_ALL_PACKAGES khó qua Play | Thấp (cao nếu lên Play) | Còn — quyết định kênh phát hành |
+
+## 10. Checklist việc cần làm
+
+**Hùng (cần máy / người):**
+- [ ] Build APK lần đầu: `./scripts/build-apk.sh` trên server có Docker (hoặc Android Studio / GitHub Actions). Lỗi build → gửi log.
+- [ ] Cài lên điện thoại có DP Alt Mode, chạy mục 7 (checklist test), gửi lại thẻ Chẩn đoán (nút Copy).
+- [ ] Cài lên Beam đời đầu, thử điều khiển từ xa bằng điện thoại; xem Beam có giữ cổng IMU không.
+- [ ] Hỏi anh Khoa: có Beam Pro không? Ưu tiên máy nào? Điện thoại nào sẽ dùng chính?
+- [ ] Đo pin / nhiệt sau 30 phút xem phim và 30 phút làm việc.
+
+**Code (Claude làm được không cần máy):**
+- [ ] Mã ghép đôi cho điều khiển từ xa.
+- [ ] network-security-config: chỉ cho HTTP tới IP nội bộ.
+- [ ] Thông báo thật của điện thoại lên kính (NotificationListener), đọc / trả lời bằng giọng.
+- [ ] Bản đồ GPS thật thay tuyến giả; tự ẩn màn khi đi nhanh.
+- [ ] Backend nhỏ giữ key Jev / LLM, đếm lượt (Docker, chạy trên server của Hùng).
+- [ ] Render GL: méo phối cảnh, 3D SBS cho phim 3D.
+
+**Quyết định cần chốt (Hùng + anh Khoa):**
+- [ ] Tên app và icon (không dùng chữ "XREAL").
+- [ ] Kênh phát hành: APK tự cài / GitHub Releases / Play Store (Play phải bỏ Trợ năng + QUERY_ALL_PACKAGES).
+- [ ] Thiết bị mục tiêu chính: điện thoại, Beam Pro hay Beam đời đầu.
+- [ ] Có thu phí không: miễn phí + Premium AI (cần backend), hay bán một lần.
+
+**Lộ trình (sau khi test):** sửa theo log → backend AI → thông báo thật → GPS → GL/stereo.
+
+## 11. Nhật ký phiên bản
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.5.0 | Điều khiển Beam đời đầu bằng điện thoại qua Wi-Fi; IMU/USB chạy nền ở cấp ứng dụng; thẻ Thiết lập lần đầu; crash log; sửa đăng nhập Google + Mở bằng Chrome; icon; script build Docker; wiki thêm giới hạn nền tảng, nợ kỹ thuật, checklist |
 | 25/11/2026 | 0.4.0 | Màn hình điện thoại vào một ô + mở app bằng giọng + bấm qua chấm ngắm (Trợ năng); kính chạy nền khi mở app khác; teleprompter theo giọng đọc; phụ đề Việt/Anh và phiên dịch Anh↔Việt |
 | 24/11/2026 | 0.3.0 | Touchpad toàn màn hình; tự kết nối / tự chiếu; bàn phím điện thoại + đọc chính tả; YouTube toàn màn hình (rạp phim); web tối; 3 chế độ Cố định / Rạp phim / Di chuyển; luật chạy trước Jev/LLM; tạm dừng màn khuất; wiki |
 | 24/11/2026 | 0.2.0 | AI giọng nói: Vosk (từ đánh thức + nhận lệnh offline), Google STT, hiểu lệnh bằng luật / Jev / LLM; lưới 9 ô; không gian lưu sẵn; tóm tắt trang; cầm màn |

@@ -338,4 +338,23 @@ class CoreTest {
         r.update(60.0)
         assertTrue(r.state().remain < s0.remain)
     }
+
+    @Test fun remoteProtocolRoundTrips() {
+        val msgs = listOf(
+            RemoteProtocol.Msg.Hello("Pixel 7"), RemoteProtocol.Msg.Pad(2, 12.5f, -3f), RemoteProtocol.Msg.TwoTap,
+            RemoteProtocol.Msg.Swipe2(-80f, 4f), RemoteProtocol.Msg.Say("mở youtube | ô 5"), RemoteProtocol.Msg.Text(""),
+            RemoteProtocol.Msg.Text("xin chào\nbạn"), RemoteProtocol.Msg.Enter, RemoteProtocol.Msg.Key("click"),
+            RemoteProtocol.Msg.Focus("a|b"), RemoteProtocol.Msg.Blur, RemoteProtocol.Msg.Ping)
+        for (m in msgs) {
+            val line = RemoteProtocol.encode(m)
+            assertFalse(line.contains('\n'))
+            assertEquals(m, RemoteProtocol.decode(line))
+        }
+        assertNull(RemoteProtocol.decode("PAD|x"))
+        assertNull(RemoteProtocol.decode("WHAT"))
+        assertTrue(RemoteProtocol.isLanAddress("192.168.1.23"))
+        assertTrue(RemoteProtocol.isLanAddress("10.0.0.5"))
+        assertFalse(RemoteProtocol.isLanAddress("8.8.8.8"))
+        assertFalse(RemoteProtocol.isLanAddress("evil.com"))
+    }
 }

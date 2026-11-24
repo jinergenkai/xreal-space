@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Glasses with a small grid of 3 screens floating above: "space" on the glasses. Original artwork. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#4FC3F7" android:pathData="M30,34h14v10h-14z M47,31h14v13h-14z M64,34h14v10h-14z"/>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="4" android:fillColor="#00000000" android:strokeLineJoin="round"
+        android:pathData="M28,56h20c2,0 3,1 3,3v6c0,4 -3,7 -7,7h-10c-4,0 -7,-3 -7,-7v-6c0,-2 1,-3 3,-3z M60,56h20c2,0 3,1 3,3v6c0,4 -3,7 -7,7h-10c-4,0 -7,-3 -7,-7v-6c0,-2 1,-3 3,-3z M51,60c2,-2 4,-2 6,0 M25,59l-5,-3 M83,59l5,-3"/>
+</vector>

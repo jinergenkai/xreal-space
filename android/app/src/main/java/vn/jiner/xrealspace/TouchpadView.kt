@@ -24,7 +24,8 @@ import kotlin.math.hypot
 @SuppressLint("ViewConstructor")
 class TouchpadView(ctx: Context, private val host: Host) : View(ctx) {
     interface Host {
-        fun space(): SpaceView?
+        /** finger on the touchpad, proxied to the gaze dot (locally or to the remote glasses box) */
+        fun pad(action: Int, dx: Float, dy: Float)
         fun onHold()
         fun onTwoTap()
         fun onThreeTap()
@@ -43,7 +44,7 @@ class TouchpadView(ctx: Context, private val host: Host) : View(ctx) {
     private var cx0 = 0f; private var cy0 = 0f
     private val holdRunnable = Runnable {
         if (proxying && maxPointers == 1) {
-            host.space()?.touchpad(MotionEvent.ACTION_CANCEL, 0f, 0f)
+            host.pad(MotionEvent.ACTION_CANCEL, 0f, 0f)
             proxying = false; held = true
             buzz(); host.onHold()
         }
@@ -73,25 +74,25 @@ class TouchpadView(ctx: Context, private val host: Host) : View(ctx) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 x0 = e.x; y0 = e.y; downAt = SystemClock.uptimeMillis(); maxPointers = 1; held = false
-                host.space()?.touchpad(MotionEvent.ACTION_DOWN, 0f, 0f); proxying = true
+                host.pad(MotionEvent.ACTION_DOWN, 0f, 0f); proxying = true
                 main.postDelayed(holdRunnable, 600)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 maxPointers = maxOf(maxPointers, e.pointerCount)
                 main.removeCallbacks(holdRunnable)
-                if (proxying) { host.space()?.touchpad(MotionEvent.ACTION_CANCEL, 0f, 0f); proxying = false }
+                if (proxying) { host.pad(MotionEvent.ACTION_CANCEL, 0f, 0f); proxying = false }
                 val (cx, cy) = centroid(e); cx0 = cx; cy0 = cy
             }
             MotionEvent.ACTION_MOVE -> {
                 if (proxying) {
                     val dx = e.x - x0; val dy = e.y - y0
                     if (hypot(dx, dy) > 24) main.removeCallbacks(holdRunnable)
-                    host.space()?.touchpad(MotionEvent.ACTION_MOVE, dx, dy)
+                    host.pad(MotionEvent.ACTION_MOVE, dx, dy)
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 main.removeCallbacks(holdRunnable)
-                if (proxying) { host.space()?.touchpad(e.actionMasked, e.x - x0, e.y - y0); proxying = false }
+                if (proxying) { host.pad(e.actionMasked, e.x - x0, e.y - y0); proxying = false }
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 if (maxPointers >= 2 && e.pointerCount == maxPointers) {   // first finger lifting ends the multi-touch gesture

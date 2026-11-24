@@ -83,7 +83,7 @@ Cần JDK 17 + Android SDK (API 35). Chọn một cách:
 2. **Dòng lệnh** (đã có Android SDK): `gradlew.bat assembleDebug` → APK ở `app/build/outputs/apk/debug/app-debug.apk`.
 3. **Server Linux có Docker** (không cần cài gì trên PC), ví dụ:
    ```bash
-   docker run --rm -v "$PWD":/project -w /project mingc/android-build-box bash -c "./gradlew assembleDebug"
+   ./scripts/build-apk.sh        # hoặc: docker run --rm -v "$PWD":/project -w /project mingc/android-build-box bash -c "./gradlew assembleDebug"
    ```
 4. **GitHub Actions**: push lên một repo private, workflow `.github/workflows/build.yml` tự build và chạy test,
    tải APK ở tab Actions → Artifacts.

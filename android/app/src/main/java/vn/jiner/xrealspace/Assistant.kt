@@ -28,6 +28,8 @@ object Assistant : SpaceState.Controller {
 
     /** set by MainActivity while a page text field is being typed into: the next utterance is dictation */
     var dictationSink: ((String) -> Unit)? = null
+    /** remote-control phone: recognized speech is sent to the glasses box instead of being run here */
+    var remoteSink: ((String) -> Unit)? = null
     /** set by MainActivity: asks the user for screen-capture consent (needs an Activity) */
     var mirrorRequester: ((afterGrant: (() -> Unit)?) -> Unit)? = null
 
@@ -58,6 +60,7 @@ object Assistant : SpaceState.Controller {
         st.log("voice: $text")
         st.voiceHeard = text
         dictationSink?.let { sink -> dictationSink = null; sink(text); return }
+        remoteSink?.let { send -> send(text); st.notify("🎤 → máy kính", text, Colors.CYAN, 2.0); return }
         val rules = VoiceCommands.parse(text)
         fun runRules(prefix: String = "") {
             if (rules !is VoiceCommands.Cmd.Unknown) st.notify("🎤 $text", prefix + label(rules), Colors.GREEN, 2.0)

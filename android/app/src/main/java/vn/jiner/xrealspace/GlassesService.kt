@@ -104,7 +104,7 @@ class GlassesService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        SpaceState.init(this); Assistant.init(this)
+        SpaceState.init(this); Assistant.init(this); Sensors.init(this)
         if (Build.VERSION.SDK_INT >= 26) {
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(NotificationChannel(CHANNEL, "Kính đang chạy", NotificationManager.IMPORTANCE_LOW))
