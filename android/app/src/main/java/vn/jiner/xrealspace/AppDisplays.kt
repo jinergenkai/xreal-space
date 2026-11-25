@@ -108,7 +108,8 @@ object AppDisplays {
         if (!supported || !allowed) { main.post { cb(-1) }; return }
         whenReady {
             io.execute {
-                val s = service ?: return@execute main.post { cb(-1) }
+                val s = service
+                if (s == null) { main.post { cb(-1) }; return@execute }
                 val id = try { s.createDisplay(surface, W, H, DPI) } catch (e: Exception) { -1 }
                 if (id >= 0) {
                     val comp = component(pkg)

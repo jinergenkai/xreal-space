@@ -26,7 +26,7 @@ object Sensors {
     /** UI listener (MainActivity) for status refresh / auto-show on the glasses */
     var listener: (() -> Unit)? = null
 
-    fun app(): Context = app
+    fun appContext(): Context = app
 
     fun init(ctx: Context) {
         if (::app.isInitialized) return
