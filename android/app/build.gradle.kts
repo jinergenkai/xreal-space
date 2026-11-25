@@ -11,8 +11,8 @@ android {
         applicationId = "vn.jiner.xrealspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.10.2"
+        versionCode = 14
+        versionName = "0.10.3"
     }
 
     // Release key comes from the environment (GitHub secrets on CI, see docs/WIKI.md "Phát hành").

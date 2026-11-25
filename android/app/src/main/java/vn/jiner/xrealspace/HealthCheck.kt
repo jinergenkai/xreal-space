@@ -24,9 +24,11 @@ object HealthCheck {
         val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         val external = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION).firstOrNull()
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
-        val net = (ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).let { cm ->
-            cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-        }
+        val net = try {
+            (ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).let { cm ->
+                cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+            }
+        } catch (e: Throwable) { SpaceState.log("net check: $e"); false }
         val tts = Speaker.vietnameseVoice
 
         val list = ArrayList<Health.Item>()

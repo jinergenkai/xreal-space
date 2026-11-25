@@ -386,6 +386,11 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - Phần phụ nào lỗi lúc khởi động thì chỉ phần đó tắt, app vẫn chạy; xem ở 🩺 Kiểm tra → mục "Khởi động".
 - Lấy log đầy đủ khi có ADB: `adb logcat -d -b crash` (lỗi Java/native gần nhất) hoặc `adb logcat -d | findstr xrealspace` (Windows).
 
+### Crash đầu tiên trên Beam (26/11/2026, 0.10.1)
+
+- `SecurityException: ACCESS_NETWORK_STATE` ở `HealthCheck.collect` → `MainActivity.onResume`. Manifest thiếu quyền; Android 11 của Beam bắt chặt. Sửa ở 0.10.3: khai báo ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE / CHANGE_WIFI_MULTICAST_STATE (NSD), bọc kiểm tra mạng và cả `refreshSetup` để phần trạng thái không bao giờ làm chết app.
+- Log cùng lúc: `TTS init failed -1` (Beam không có engine đọc chữ → Kiểm tra sẽ báo thiếu), `no presentation display` (trên Beam, kính là màn hình của chính Beam, không phải màn hình ngoài).
+
 ### Rà soát 25/11/2026 (trước khi build thử trên máy)
 
 Đã sửa:

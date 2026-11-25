@@ -364,7 +364,12 @@ class MainActivity : Activity(), TouchpadView.Host {
     private var setupText: TextView? = null
 
     /** What the user still has to allow, in one line each (the app works partially without each). */
+    /** status panel only: a failing check must never take the whole app down (Beam: 0.10.1 died here) */
     private fun refreshSetup() {
+        try { refreshSetupInner() } catch (e: Throwable) { SpaceState.log("refreshSetup: $e") }
+    }
+
+    private fun refreshSetupInner() {
         val t = setupText ?: return
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         fun mark(ok: Boolean) = if (ok) "✓" else "✗"
