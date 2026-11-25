@@ -35,6 +35,7 @@ import android.text.TextWatcher
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import vn.jiner.xrealspace.core.FastPath
+import vn.jiner.xrealspace.core.Health
 import vn.jiner.xrealspace.core.RemoteProtocol
 import vn.jiner.xrealspace.core.MediaAction
 import vn.jiner.xrealspace.core.FollowMode
@@ -374,6 +375,159 @@ class MainActivity : Activity(), TouchpadView.Host {
     /** status panel only: a failing check must never take the whole app down (Beam: 0.10.1 died here) */
     private fun refreshSetup() {
         try { refreshSetupInner() } catch (e: Throwable) { SpaceState.log("refreshSetup: $e") }
+        try { refreshHome() } catch (e: Throwable) { SpaceState.log("refreshHome: $e") }
+    }
+
+    // ------------------------------------------------------------------ home screen
+    private lateinit var advanced: LinearLayout
+    private var homeChips: LinearLayout? = null
+    private var heroTitle: TextView? = null
+    private var heroDesc: TextView? = null
+    private var todoBox: LinearLayout? = null
+
+    private fun buildHome(page: LinearLayout, scroll: ScrollView) {
+        val c = this
+        // header
+        page.addView(LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(LinearLayout(c).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(Ui.title(c, "XREAL Space", 26f))
+                addView(Ui.body(c, "Màn hình lớn trước mắt bạn"))
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Ui.chip(c, "v${BuildConfig.VERSION_NAME}", Ui.TEXT_2))
+        })
+        homeChips = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
+        page.addView(homeChips)
+
+        // hero: the one thing to press
+        page.addView(Ui.card(c, 20).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0B3B2E.toInt(), Ui.PAPER)).apply { cornerRadius = dpf(18) }
+            heroTitle = Ui.title(c, "", 20f); addView(heroTitle)
+            heroDesc = Ui.body(c, "", 0xFFC4CDD5.toInt(), 14f).apply { setPadding(0, dp(6), 0, dp(16)) }; addView(heroDesc)
+            addView(Ui.primary(c, "▶  Mở không gian") { openSpace() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(Ui.gap(c, 8))
+            addView(Ui.soft(c, "🎓  Lần đầu dùng? Xem hướng dẫn 1 phút") { SpaceState.startTutorial(); openSpace() },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
+
+        // what do you want to do?
+        page.addView(Ui.overline(c, "Bạn muốn làm gì?"))
+        fun pair(a: View, b: View) = LinearLayout(c).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(a, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(0, 0, dp(6), dp(12)) })
+            addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(6), 0, 0, dp(12)) })
+        }
+        page.addView(pair(
+            Ui.actionCard(c, "🎬", Ui.ERROR, "Xem phim", "Mở trang phim trên màn lớn, chặn quảng cáo, nhớ chỗ đang xem") { startFilm() },
+            Ui.actionCard(c, "💼", Ui.INFO, "Làm việc", "Nhiều màn hình web quanh bạn, quay đầu để chuyển") { startWork() }))
+        page.addView(pair(
+            Ui.actionCard(c, "📖", Ui.WARN, "Đọc sách", "PDF, EPUB — lật trang bằng nút hoặc giọng nói") { pickDoc() },
+            Ui.actionCard(c, "🧭", Ui.PRIMARY, "Đi đường", "Bản đồ và chỉ đường, tự ẩn màn khi đi nhanh") { startRoute() }))
+
+        // what is still missing
+        page.addView(Ui.overline(c, "Cần thiết lập"))
+        todoBox = Ui.card(c, 6)
+        page.addView(todoBox)
+
+        page.addView(Ui.overline(c, "Khác"))
+        page.addView(row(
+            Ui.soft(c, "🩺 Kiểm tra") { startActivity(Intent(c, HealthActivity::class.java)) },
+            Ui.soft(c, "📱 Remote") { showAdvanced(scroll, true, remoteText) },
+            Ui.soft(c, "⚙ Nâng cao") { showAdvanced(scroll, advanced.visibility != View.VISIBLE, null) }))
+        refreshHome()
+    }
+
+    private fun showAdvanced(scroll: ScrollView, show: Boolean, target: View?) {
+        advanced.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) scroll.post { scroll.smoothScrollTo(0, ((target ?: advanced).let { v ->
+            var y = 0; var cur: View? = v; while (cur != null && cur !== scroll) { y += cur.top; cur = cur.parent as? View }; y - dp(12) })) }
+    }
+
+    private fun refreshHome() {
+        val c = this
+        val usb = Sensors.usb
+        val glasses = glassesDisplay() != null
+        val st = SpaceState
+        heroTitle?.text = when {
+            st.onBeam -> "Sẵn sàng trên Beam"
+            glasses -> "Kính đã kết nối"
+            usb.connected -> "Kính đã cắm, chưa có hình"
+            else -> "Chưa thấy kính"
+        }
+        heroDesc?.text = when {
+            st.onBeam -> "Beam đang chiếu app này lên kính. Dùng ◀▶▲▼ để xoay nhìn, nút giữa để chọn."
+            glasses -> "Bấm để đưa không gian lên kính. Điện thoại thành bàn di chuột."
+            usb.connected -> "Điện thoại này có thể không xuất hình qua USB-C. Vào Kiểm tra để xem chi tiết, hoặc dùng XREAL Beam."
+            else -> "Cắm kính vào cổng USB-C có xuất hình, hoặc dùng XREAL Beam. Bạn vẫn xem thử được trên màn hình này."
+        }
+        homeChips?.let { box ->
+            box.removeAllViews()
+            fun add(t: String, col: Int) = box.addView(Ui.chip(c, t, col), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) })
+            if (st.onBeam) add("● XREAL Beam", Ui.PRIMARY_LIGHT)
+            else add(if (glasses) "● Kính" else "○ Kính", if (glasses) Ui.PRIMARY_LIGHT else Ui.TEXT_2)
+            add(if (hasMic()) "● Micro" else "○ Micro", if (hasMic()) Ui.PRIMARY_LIGHT else Ui.TEXT_2)
+            if (RemoteLink.role == RemoteLink.Role.HOST) add("Mã remote ${RemoteLink.pin}", Ui.INFO)
+            if (CrashLog.safeMode) add("Chế độ an toàn", Ui.WARN)
+        }
+        todoBox?.let { box ->
+            box.removeAllViews()
+            val missing = try { HealthCheck.collect(c).filter { it.status == Health.Status.MISSING } } catch (_: Throwable) { emptyList() }
+            if (missing.isEmpty()) {
+                box.addView(Ui.body(c, "✓  Mọi thứ đã sẵn sàng", Ui.PRIMARY_LIGHT, 14f).apply { setPadding(dp(12), dp(12), dp(12), dp(12)) })
+            } else {
+                missing.take(3).forEach { item ->
+                    box.addView(LinearLayout(c).apply {
+                        orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
+                        background = Ui.states(c, 0x00000000, Ui.PAPER_2, 12); isFocusable = true; isClickable = true
+                        setOnClickListener { startActivity(Intent(c, HealthActivity::class.java)) }
+                        addView(Ui.body(c, "○  ${item.req.title}", Ui.TEXT, 14f).apply { typeface = Ui.semibold })
+                        addView(Ui.body(c, item.req.fix, Ui.TEXT_2, 12.5f).apply { setPadding(dp(20), dp(2), 0, 0) })
+                    })
+                }
+                if (missing.size > 3) box.addView(Ui.body(c, "+${missing.size - 3} mục khác trong Kiểm tra", Ui.TEXT_3, 12.5f).apply { setPadding(dp(32), dp(2), 0, dp(10)) })
+            }
+        }
+    }
+
+    private fun openSpace() { if (glassesDisplay() != null) showOnGlasses() else showOnPhone() }
+
+    private fun askText(title: String, hint: String, value: String, actions: List<Pair<String, (String) -> Unit>>) {
+        val field = EditText(this).apply { this.hint = hint; setText(value); setSingleLine(); Ui.styleField(this) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0); addView(field) }
+        val b = android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(title).setView(box)
+        actions.getOrNull(0)?.let { (t, f) -> b.setPositiveButton(t) { _, _ -> f(field.text.toString().trim()) } }
+        actions.getOrNull(1)?.let { (t, f) -> b.setNeutralButton(t) { _, _ -> f(field.text.toString().trim()) } }
+        actions.getOrNull(2)?.let { (t, f) -> b.setNegativeButton(t) { _, _ -> f(field.text.toString().trim()) } }
+        b.show()
+    }
+
+    private fun startFilm() {
+        val prefs = getSharedPreferences("home", MODE_PRIVATE)
+        askText("Mở trang phim", "Địa chỉ trang, vd youtube.com", prefs.getString("film", "https://www.youtube.com") ?: "", listOf(
+            "Mở" to { u: String ->
+                if (u.isNotEmpty()) {
+                    prefs.edit().putString("film", u).apply()
+                    SpaceState.place(5, if (u.startsWith("http")) u else "https://$u", "Phim")
+                    SpaceState.setFollow(FollowMode.CINEMA); openSpace()
+                }
+            }))
+    }
+
+    private fun startWork() {
+        SpaceState.setFollow(FollowMode.WORLD); openSpace(); SpaceState.showGrid(6.0)
+    }
+
+    private fun startRoute() {
+        fun go(q: String, profile: String) {
+            if (q.isEmpty()) return
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 3)
+                SpaceState.notify("Chỉ đường", "Cho phép vị trí rồi bấm lại", Colors.AMBER, 3.0); return
+            }
+            Navigation.start(q, profile); SpaceState.setFollow(FollowMode.TRAVEL); openSpace()
+        }
+        askText("Đi đến đâu?", "vd: Chợ Bến Thành", "", listOf("🏍 Xe máy" to { q -> go(q, "car") }, "🚲 Đạp" to { q -> go(q, "bike") }, "🚶 Đi bộ" to { q -> go(q, "foot") }))
     }
 
     private fun refreshSetupInner() {
@@ -697,6 +851,7 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     // ------------------------------------------------------------------ UI (built in code: no layout XML, no AndroidX)
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun dpf(v: Int) = v * resources.displayMetrics.density
 
     private fun btn(text: String, onClick: () -> Unit) = Button(this).apply {
         this.text = text; isAllCaps = false; textSize = 13f
@@ -705,20 +860,26 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     private fun row(vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        views.forEach { addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
+        views.forEach { addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }) }
     }
 
     private fun label(text: String) = TextView(this).apply {
-        this.text = text; setTextColor(Colors.CYAN); textSize = 13f; setPadding(0, dp(12), 0, dp(4)); typeface = Typeface.DEFAULT_BOLD
+        this.text = text; setTextColor(Ui.PRIMARY_LIGHT); textSize = 14f; setPadding(dp(4), dp(22), 0, dp(6)); typeface = Ui.bold
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun buildUi() {
-        root = FrameLayout(this).apply { setBackgroundColor(0xFF0E1116.toInt()) }
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(14), dp(14), dp(40)) }
-        controls = ScrollView(this).apply { addView(col) }
+        root = FrameLayout(this).apply { setBackgroundColor(Ui.BG) }
+        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(20), dp(18), dp(48)) }
+        val scroll = ScrollView(this).apply { addView(page); isFillViewport = true }
+        controls = scroll
+        // everything that used to be the whole screen now lives under "Cài đặt nâng cao"
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        advanced = col
+        buildHome(page, scroll)
+        page.addView(col)
 
-        col.addView(TextView(this).apply { text = "XREAL Space · test build"; setTextColor(Color.WHITE); textSize = 20f; typeface = Typeface.DEFAULT_BOLD })
+        col.addView(Ui.overline(this, "Trạng thái chi tiết"))
         statusText = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f; typeface = Typeface.MONOSPACE; setPadding(0, dp(8), 0, dp(4)) }
         col.addView(statusText)
 
@@ -1017,8 +1178,9 @@ class MainActivity : Activity(), TouchpadView.Host {
         col.addView(row(btn("Reset bố cục") { SpaceState.resetLayout() }, btn("Reset hiệu chỉnh trục") { SpaceState.resetCalibration() },
             btn("Xoá crash log") { CrashLog.clear(); refreshDiag() }))
 
+        Ui.restyle(col)
         root.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        backBtn = btn("⚙ Điều khiển") { leavePhoneScreen(); if (glassesDisplay() != null) showOnGlasses(quiet = true) }.apply {
+        backBtn = btn("⚙ Menu") { leavePhoneScreen(); if (glassesDisplay() != null) showOnGlasses(quiet = true) }.apply {
             visibility = View.GONE; alpha = 0.7f
         }
         root.addView(backBtn, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START))

@@ -23,7 +23,7 @@ class HealthActivity : Activity() {
         super.onCreate(savedInstanceState)
         SpaceState.init(this); Assistant.init(this); Sensors.init(this)
         col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(32)) }
-        setContentView(ScrollView(this).apply { setBackgroundColor(0xFF0E1116.toInt()); addView(col) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(Ui.BG); addView(col) })
         if (!Updater.checked) Updater.check(this) { render() }
     }
 
@@ -85,6 +85,7 @@ class HealthActivity : Activity() {
         }
         col.addView(text("Phiên bản ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
             11.5f, Colors.GREY, top = 16))
+        Ui.restyle(col)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()

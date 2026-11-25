@@ -386,6 +386,12 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - Phần phụ nào lỗi lúc khởi động thì chỉ phần đó tắt, app vẫn chạy; xem ở 🩺 Kiểm tra → mục "Khởi động".
 - Lấy log đầy đủ khi có ADB: `adb logcat -d -b crash` (lỗi Java/native gần nhất) hoặc `adb logcat -d | findstr xrealspace` (Windows).
 
+### Giao diện mới (0.13.0)
+
+- Phong cách theo bộ Minimal UI (dark): nền #141A21, thẻ #1C252E bo 16 dp, màu chính xanh #00A76F, chữ phụ #919EAB; mọi nút có viền sáng khi chọn bằng D-pad (Beam). Bộ widget ở `Ui.kt`. Font: dùng sans-serif hệ thống (chưa nhúng Public Sans).
+- Màn chính chỉ còn: trạng thái (chip), 1 nút lớn **Mở không gian**, 4 thẻ việc cần làm (**Xem phim · Làm việc · Đọc sách · Đi đường**), **Cần thiết lập** (3 mục còn thiếu từ Kiểm tra), và Kiểm tra / Remote / **Nâng cao** (toàn bộ nút cũ nằm ở đây).
+- Xem phim: hỏi địa chỉ trang (nhớ lần trước, mặc định YouTube), mở ở ô giữa, chế độ Rạp phim.
+
 ### Chạy trên XREAL Beam đời đầu (0.11.0)
 
 - Beam tự đưa màn hình của nó lên kính và tự làm 3DoF; nó giữ USB/IMU của kính. App phát hiện Beam (Build.MODEL/MANUFACTURER) → **không gian tự mở toàn màn hình**, Beam chiếu nó lên kính.
