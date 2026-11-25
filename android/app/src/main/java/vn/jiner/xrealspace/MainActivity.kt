@@ -109,6 +109,38 @@ class MainActivity : Activity(), TouchpadView.Host {
     // ------------------------------------------------------------------ lifecycle
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
+        // the last launch died while starting: show why, offer safe mode, before touching anything else
+        if (CrashLog.lastStartCrashed(this) && CrashLog.read().isNotEmpty()) { showCrashScreen(); return }
+        normalStart()
+    }
+
+    /** Error from the last start + choices. Buttons are reachable with the Beam's D-pad. */
+    /** true while the crash screen is shown: the normal UI was never built, so skip its lifecycle */
+    private var crashScreen = false
+
+    private fun showCrashScreen() {
+        crashScreen = true
+        val text = CrashLog.read()
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
+        col.addView(TextView(this).apply { this.text = "XREAL Space bị lỗi ở lần mở trước"; textSize = 22f; setTextColor(Colors.AMBER) })
+        col.addView(TextView(this).apply {
+            this.text = "Chụp màn hình này gửi cho người phát triển. File lỗi cũng nằm ở Download/xreal-space-crash.txt."
+            textSize = 14f; setTextColor(Color.WHITE)
+        })
+        val go = { safe: Boolean ->
+            CrashLog.safeMode = safe; CrashLog.markStarted(this); CrashLog.clear()
+            recreate()
+        }
+        col.addView(row(btn("▶ Chế độ an toàn") { go(true) }, btn("Thử lại bình thường") { go(false) }))
+        col.addView(TextView(this).apply { this.text = text.take(6000); textSize = 12f; setTextColor(0xFFCFD8DC.toInt()); setTextIsSelectable(true) })
+        setContentView(ScrollView(this).apply { setBackgroundColor(0xFF0E1116.toInt()); addView(col) })
+        col.getChildAt(2)?.let { (it as? LinearLayout)?.getChildAt(0)?.requestFocus() }
+    }
+
+    private fun normalStart() {
+        CrashLog.markStarting(this)
+        ui.postDelayed({ CrashLog.markStarted(this) }, 8000)     // alive 8 s = this start is fine
         SpaceState.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // plugging the glasses in = connect IMU + show the space on them + phone becomes the touchpad, no buttons
@@ -119,15 +151,19 @@ class MainActivity : Activity(), TouchpadView.Host {
         Assistant.mirrorRequester = { after -> requestMirror(after) }
         Assistant.docPicker = { pickDoc() }
         buildUi()
-        setupRemote()
-        Updater.check(this) { refreshSetup() }
+        if (CrashLog.safeMode) {
+            SpaceState.notify("Chế độ an toàn", "Đã tắt các phần phụ. Tắt ở mục Kiểm tra khi đã gửi lỗi.", Colors.AMBER, 8.0)
+        } else {
+            CrashLog.guard("Điều khiển từ xa (Wi-Fi)") { setupRemote() }
+            CrashLog.guard("Cập nhật") { Updater.check(this) { refreshSetup() } }
+        }
         dm.registerDisplayListener(displayListener, ui)
         SpaceState.log("App start. Android ${android.os.Build.VERSION.RELEASE} / ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-        connectGlasses()
+        CrashLog.guard("Kết nối kính (USB)") { connectGlasses() }
         handleIntent(intent)
     }
 
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); if (!crashScreen) handleIntent(intent) }
 
     private fun handleIntent(i: Intent?) {
         if (i?.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) connectGlasses()
@@ -136,6 +172,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     }
 
     override fun onStart() {
+        if (crashScreen) { super.onStart(); return }
         super.onStart()
         started = true
         if (wantGlassesOutput) showOnGlasses(quiet = true)
@@ -144,10 +181,11 @@ class MainActivity : Activity(), TouchpadView.Host {
         if (SpaceState.wakeEnabled && hasMic()) voice.startWake()
     }
 
-    override fun onResume() { super.onResume(); inForeground = true; refreshSetup() }
+    override fun onResume() { super.onResume(); if (crashScreen) return; inForeground = true; refreshSetup() }
     override fun onPause() { inForeground = false; super.onPause() }
 
     override fun onStop() {
+        if (crashScreen) { super.onStop(); return }
         started = false
         ui.removeCallbacks(ticker)
         if (!serviceHosted) voice.stopWake()   // service-hosted glasses keep listening while other apps are in front
@@ -159,6 +197,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     }
 
     override fun onDestroy() {
+        if (crashScreen) { super.onDestroy(); return }
         dm.unregisterDisplayListener(displayListener)
         Sensors.listener = null   // USB/IMU live in Sensors (process-wide) and keep running for GlassesService
         Assistant.mirrorRequester = null
@@ -363,6 +402,7 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     // ------------------------------------------------------------------ keys: volume = remote, BT keyboard = prototype hotkeys
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (crashScreen) return super.onKeyDown(keyCode, event)
         val st = SpaceState
         when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> {
@@ -420,6 +460,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     } catch (_: Exception) { "?" }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (crashScreen) return super.onKeyUp(keyCode, event)
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             if (!volLongPressed && RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Key("click"))
             else if (!volLongPressed && space?.clickAtGaze() != true) SpaceState.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0)
@@ -431,6 +472,7 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (crashScreen) { @Suppress("DEPRECATION") super.onBackPressed(); return }
         if (space?.inFullscreen == true) { space?.exitFullscreen(); return }
         if (::padOverlay.isInitialized && padOverlay.visibility == View.VISIBLE) { showTouchpad(false); return }
         if (phoneSpace != null) { leavePhoneScreen(); return }

@@ -38,6 +38,22 @@ class HealthActivity : Activity() {
         col.addView(text(Health.summary(items), 16f, if (items.any { it.status == Health.Status.MISSING }) Colors.AMBER else Colors.GREEN, bold = true))
         col.addView(Button(this).apply { text = "Kiểm tra lại"; isAllCaps = false; setOnClickListener { render() } })
 
+        // start-up: safe mode, parts that failed to start, last crash
+        if (CrashLog.safeMode || CrashLog.startupProblems.isNotEmpty() || CrashLog.read().isNotEmpty()) {
+            col.addView(text("Khởi động", 17f, Colors.AMBER, bold = true, top = 14))
+            if (CrashLog.safeMode) {
+                col.addView(text("Đang ở CHẾ ĐỘ AN TOÀN: giọng nói nền, Shizuku, tiện ích, giọng đọc, điều khiển từ xa, cập nhật đang tắt.", 13.5f, 0xFFE0E0E0.toInt()))
+                col.addView(Button(this).apply { text = "Tắt chế độ an toàn (khởi động lại app)"; isAllCaps = false
+                    setOnClickListener { CrashLog.safeMode = false; finishAffinity(); startActivity(android.content.Intent(this@HealthActivity, MainActivity::class.java)) } })
+            }
+            CrashLog.startupProblems.forEach { (part, err) -> col.addView(text("✗ $part không khởi động được: ${err.take(160)}", 13f, 0xFFE0E0E0.toInt())) }
+            CrashLog.read().takeIf { it.isNotEmpty() }?.let { crash ->
+                col.addView(text("Lỗi gần nhất (cũng ở Download/xreal-space-crash.txt):", 13f, Colors.GREY))
+                col.addView(text(crash.take(1500), 11f, 0xFFB0BEC5.toInt()).apply { setTextIsSelectable(true) })
+                col.addView(Button(this).apply { text = "Xoá lỗi đã lưu"; isAllCaps = false; setOnClickListener { CrashLog.clear(); render() } })
+            }
+        }
+
         val blocked = Health.blocked(items)
         if (blocked.isNotEmpty()) {
             col.addView(text("Chưa dùng được", 17f, Colors.AMBER, bold = true, top = 14))

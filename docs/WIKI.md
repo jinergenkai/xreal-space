@@ -378,6 +378,13 @@ Bản release cần **khoá ký riêng** để các bản sau cài đè được
 4. **Sao lưu file .jks** (USB / Drive riêng), xoá `secrets.txt`. Mất khoá = người dùng phải gỡ app mới cài được bản mới.
 Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài được). Khoá không bao giờ nằm trong repo (`.gitignore` chặn `*.jks`).
 
+### Khi app crash (0.10.1)
+
+- Lần mở sau, app **hiện nội dung lỗi** (bấm được bằng nút điều hướng của Beam) với 2 lựa chọn: **Chế độ an toàn** (tắt các phần phụ: giọng nói nền, Shizuku, tiện ích, giọng đọc, điều khiển từ xa, cập nhật) hoặc **Thử lại bình thường**.
+- File lỗi đồng thời nằm ở **Download/xreal-space-crash.txt** (cắm máy vào PC, mở bộ nhớ trong → Download).
+- Phần phụ nào lỗi lúc khởi động thì chỉ phần đó tắt, app vẫn chạy; xem ở 🩺 Kiểm tra → mục "Khởi động".
+- Lấy log đầy đủ khi có ADB: `adb logcat -d -b crash` (lỗi Java/native gần nhất) hoặc `adb logcat -d | findstr xrealspace` (Windows).
+
 ### Rà soát 25/11/2026 (trước khi build thử trên máy)
 
 Đã sửa:

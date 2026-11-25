@@ -160,12 +160,13 @@ object SpaceState {
         if (prefsCtx != null) return
         prefsCtx = ctx.applicationContext
         CrashLog.install(ctx)
-        DocPositions.init(ctx)
-        AppDisplays.init(ctx)
-        Utilities.init(ctx)
-        Speaker.init(ctx)
-        config = load(ctx)
-        loadSettings(ctx)
+        CrashLog.guard("Vị trí tài liệu") { DocPositions.init(ctx) }
+        config = try { load(ctx) } catch (e: Throwable) { CrashLog.startupProblems["Cấu hình đã lưu"] = e.toString(); SpaceConfig() }
+        CrashLog.guard("Cài đặt đã lưu") { loadSettings(ctx) }
+        if (CrashLog.safeMode) { log("SAFE MODE: optional parts not started"); return }
+        CrashLog.guard("App trong ô (Shizuku)") { AppDisplays.init(ctx) }
+        CrashLog.guard("Tiện ích (lịch, thời tiết, hẹn giờ)") { Utilities.init(ctx) }
+        CrashLog.guard("Giọng đọc (TTS)") { Speaker.init(ctx) }
     }
 
     // ------------------------------------------------------------------ IMU
