@@ -133,9 +133,22 @@ class MainActivity : Activity(), TouchpadView.Host {
             recreate()
         }
         col.addView(row(btn("▶ Chế độ an toàn") { go(true) }, btn("Thử lại bình thường") { go(false) }))
+        // Beam's launcher hides Android Settings: open them from here to switch on USB debugging (ADB)
+        col.addView(row(btn("Mở Developer options (bật USB debugging)") { openAndroidSettings(true) }, btn("Mở Cài đặt Android") { openAndroidSettings(false) }))
         col.addView(TextView(this).apply { this.text = text.take(6000); textSize = 12f; setTextColor(0xFFCFD8DC.toInt()); setTextIsSelectable(true) })
         setContentView(ScrollView(this).apply { setBackgroundColor(0xFF0E1116.toInt()); addView(col) })
         col.getChildAt(2)?.let { (it as? LinearLayout)?.getChildAt(0)?.requestFocus() }
+    }
+
+    private fun openAndroidSettings(dev: Boolean) {
+        val tries = buildList {
+            if (dev) add(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            if (dev) add(Intent(android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS))   // tap "Build number" 7x
+            add(Intent(android.provider.Settings.ACTION_SETTINGS))
+            add(Intent().setClassName("com.android.settings", "com.android.settings.Settings"))
+        }
+        for (i in tries) try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Throwable) {}
+        android.widget.Toast.makeText(this, "Máy này chặn mở Cài đặt", android.widget.Toast.LENGTH_LONG).show()
     }
 
     private fun normalStart() {
