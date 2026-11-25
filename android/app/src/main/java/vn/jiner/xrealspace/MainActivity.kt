@@ -164,6 +164,10 @@ class MainActivity : Activity(), TouchpadView.Host {
         CrashLog.guard("Giọng nói (Vosk)") { Assistant.init(this) }
         Assistant.mirrorRequester = { after -> requestMirror(after) }
         Assistant.docPicker = { pickDoc() }
+        Ui.init(this, SpaceState.onBeam)
+        window.statusBarColor = Ui.BG
+        @Suppress("DEPRECATION")
+        if (!Ui.dark) window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         buildUi()
         if (CrashLog.safeMode) {
             SpaceState.notify("Chế độ an toàn", "Đã tắt các phần phụ. Tắt ở mục Kiểm tra khi đã gửi lỗi.", Colors.AMBER, 8.0)
@@ -388,54 +392,53 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     private fun buildHome(page: LinearLayout, scroll: ScrollView) {
         val c = this
+        val full = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         // header
         page.addView(LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(LinearLayout(c).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(Ui.title(c, "XREAL Space", 26f))
-                addView(Ui.body(c, "Màn hình lớn trước mắt bạn"))
+                addView(Ui.title(c, "XREAL Space", 28f))
+                addView(Ui.body(c, "Màn hình lớn ngay trước mắt bạn"))
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Ui.chip(c, "v${BuildConfig.VERSION_NAME}", Ui.TEXT_2))
+            addView(Ui.chip(c, "v${BuildConfig.VERSION_NAME}", null))
         })
-        homeChips = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
+        homeChips = LinearLayout(c).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(16), 0, 0) }
         page.addView(homeChips)
 
         // hero: the one thing to press
-        page.addView(Ui.card(c, 20).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0B3B2E.toInt(), Ui.PAPER)).apply { cornerRadius = dpf(18) }
-            heroTitle = Ui.title(c, "", 20f); addView(heroTitle)
-            heroDesc = Ui.body(c, "", 0xFFC4CDD5.toInt(), 14f).apply { setPadding(0, dp(6), 0, dp(16)) }; addView(heroDesc)
-            addView(Ui.primary(c, "▶  Mở không gian") { openSpace() }.also { homePrimary = it }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            addView(Ui.gap(c, 8))
-            addView(Ui.soft(c, "🎓  Lần đầu dùng? Xem hướng dẫn 1 phút") { SpaceState.startTutorial(); openSpace() },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
+        page.addView(Ui.card(c).apply {
+            heroTitle = Ui.title(c, "", 22f); addView(heroTitle)
+            heroDesc = Ui.body(c, "").apply { setPadding(0, dp(8), 0, dp(20)) }; addView(heroDesc)
+            addView(Ui.primary(c, "Mở không gian") { openSpace() }.also { homePrimary = it }, full)
+            addView(Ui.gap(c, 10))
+            addView(Ui.soft(c, "Lần đầu dùng? Xem hướng dẫn 1 phút") { SpaceState.startTutorial(); openSpace() }, full)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(20) })
 
         // what do you want to do?
         page.addView(Ui.overline(c, "Bạn muốn làm gì?"))
         fun pair(a: View, b: View) = LinearLayout(c).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(a, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(0, 0, dp(6), dp(12)) })
-            addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(6), 0, 0, dp(12)) })
+            addView(a, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(0, 0, dp(8), dp(16)) })
+            addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(8), 0, 0, dp(16)) })
         }
         page.addView(pair(
-            Ui.actionCard(c, "🎬", Ui.ERROR, "Xem phim", "Mở trang phim trên màn lớn, chặn quảng cáo, nhớ chỗ đang xem") { startFilm() },
-            Ui.actionCard(c, "💼", Ui.INFO, "Làm việc", "Nhiều màn hình web quanh bạn, quay đầu để chuyển") { startWork() }))
+            Ui.actionCard(c, "🎬", Ui.ERROR_T, "Xem phim", "Trang phim trên màn lớn, chặn quảng cáo, nhớ chỗ đang xem") { startFilm() },
+            Ui.actionCard(c, "💼", Ui.PRIMARY_T, "Làm việc", "Nhiều màn hình web quanh bạn, quay đầu để chuyển") { startWork() }))
         page.addView(pair(
-            Ui.actionCard(c, "📖", Ui.WARN, "Đọc sách", "PDF, EPUB — lật trang bằng nút hoặc giọng nói") { pickDoc() },
-            Ui.actionCard(c, "🧭", Ui.PRIMARY, "Đi đường", "Bản đồ và chỉ đường, tự ẩn màn khi đi nhanh") { startRoute() }))
+            Ui.actionCard(c, "📖", Ui.WARNING_T, "Đọc sách", "PDF, EPUB — lật trang bằng nút hoặc giọng nói") { pickDoc() },
+            Ui.actionCard(c, "🧭", Ui.SUCCESS_T, "Đi đường", "Bản đồ, chỉ đường, tự ẩn màn khi đi nhanh") { startRoute() }))
 
         // what is still missing
         page.addView(Ui.overline(c, "Cần thiết lập"))
-        todoBox = Ui.card(c, 6)
-        page.addView(todoBox)
+        todoBox = Ui.card(c, 8)
+        page.addView(todoBox, full)
 
         page.addView(Ui.overline(c, "Khác"))
         page.addView(row(
-            Ui.soft(c, "🩺 Kiểm tra") { startActivity(Intent(c, HealthActivity::class.java)) },
-            Ui.soft(c, "📱 Remote") { showAdvanced(scroll, true, remoteText) },
-            Ui.soft(c, "⚙ Nâng cao") { showAdvanced(scroll, advanced.visibility != View.VISIBLE, null) }))
+            Ui.soft(c, "Kiểm tra") { startActivity(Intent(c, HealthActivity::class.java)) },
+            Ui.soft(c, "Remote") { showAdvanced(scroll, true, remoteText) },
+            Ui.soft(c, "Nâng cao") { showAdvanced(scroll, advanced.visibility != View.VISIBLE, null) }))
         refreshHome()
     }
 
@@ -457,36 +460,44 @@ class MainActivity : Activity(), TouchpadView.Host {
             else -> "Chưa thấy kính"
         }
         heroDesc?.text = when {
-            st.onBeam -> "Beam đang chiếu app này lên kính. Dùng ◀▶▲▼ để xoay nhìn, nút giữa để chọn."
+            st.onBeam -> "Beam đang chiếu app này lên kính. Dùng ◀ ▶ ▲ ▼ để xoay nhìn, nút giữa để chọn."
             glasses -> "Bấm để đưa không gian lên kính. Điện thoại thành bàn di chuột."
             usb.connected -> "Điện thoại này có thể không xuất hình qua USB-C. Vào Kiểm tra để xem chi tiết, hoặc dùng XREAL Beam."
             else -> "Cắm kính vào cổng USB-C có xuất hình, hoặc dùng XREAL Beam. Bạn vẫn xem thử được trên màn hình này."
         }
         homeChips?.let { box ->
             box.removeAllViews()
-            fun add(t: String, col: Int) = box.addView(Ui.chip(c, t, col), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) })
-            if (st.onBeam) add("● XREAL Beam", Ui.PRIMARY_LIGHT)
-            else add(if (glasses) "● Kính" else "○ Kính", if (glasses) Ui.PRIMARY_LIGHT else Ui.TEXT_2)
-            add(if (hasMic()) "● Micro" else "○ Micro", if (hasMic()) Ui.PRIMARY_LIGHT else Ui.TEXT_2)
-            if (RemoteLink.role == RemoteLink.Role.HOST) add("Mã remote ${RemoteLink.pin}", Ui.INFO)
-            if (CrashLog.safeMode) add("Chế độ an toàn", Ui.WARN)
+            fun add(t: String, tone: Ui.Tone?) = box.addView(Ui.chip(c, t, tone),
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { rightMargin = dp(8) })
+            if (st.onBeam) add("XREAL Beam", Ui.SUCCESS_T)
+            else add(if (glasses) "Kính: đã kết nối" else "Kính: chưa thấy", if (glasses) Ui.SUCCESS_T else null)
+            add(if (hasMic()) "Micro: có" else "Micro: chưa cấp", if (hasMic()) Ui.SUCCESS_T else Ui.WARNING_T)
+            if (RemoteLink.role == RemoteLink.Role.HOST) add("Mã remote ${RemoteLink.pin}", Ui.INFO_T)
+            if (CrashLog.safeMode) add("Chế độ an toàn", Ui.WARNING_T)
         }
         todoBox?.let { box ->
             box.removeAllViews()
             val missing = try { HealthCheck.collect(c).filter { it.status == Health.Status.MISSING } } catch (_: Throwable) { emptyList() }
             if (missing.isEmpty()) {
-                box.addView(Ui.body(c, "✓  Mọi thứ đã sẵn sàng", Ui.PRIMARY_LIGHT, 14f).apply { setPadding(dp(12), dp(12), dp(12), dp(12)) })
+                box.addView(Ui.subtitle(c, "✓  Mọi thứ đã sẵn sàng", 15f).apply { setTextColor(Ui.onSoft(Ui.SUCCESS_T)); setPadding(dp(16), dp(14), dp(16), dp(14)) })
             } else {
-                missing.take(3).forEach { item ->
+                missing.take(3).forEachIndexed { i, item ->
                     box.addView(LinearLayout(c).apply {
-                        orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10))
-                        background = Ui.states(c, 0x00000000, Ui.PAPER_2, 12); isFocusable = true; isClickable = true
+                        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(12), dp(12), dp(12))
+                        background = Ui.states(c, Ui.shape(c, 0, 12), Ui.shape(c, Ui.NEUTRAL, 12), Ui.shape(c, Ui.NEUTRAL, 12, Ui.TEXT, 2))
+                        isFocusable = true; isClickable = true
                         setOnClickListener { startActivity(Intent(c, HealthActivity::class.java)) }
-                        addView(Ui.body(c, "○  ${item.req.title}", Ui.TEXT, 14f).apply { typeface = Ui.semibold })
-                        addView(Ui.body(c, item.req.fix, Ui.TEXT_2, 12.5f).apply { setPadding(dp(20), dp(2), 0, 0) })
+                        addView(LinearLayout(c).apply {
+                            orientation = LinearLayout.VERTICAL
+                            addView(Ui.subtitle(c, item.req.title, 14f))
+                            addView(Ui.body(c, item.req.fix, Ui.TEXT_2, 13f).apply { setPadding(0, dp(2), 0, 0) })
+                        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                        addView(Ui.chip(c, "Cần làm", Ui.WARNING_T), LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = dp(12) })
                     })
+                    if (i < minOf(missing.size, 3) - 1) box.addView(View(c).apply { setBackgroundColor(0x33919EAB) },
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply { setMargins(dp(16), 0, dp(16), 0) })
                 }
-                if (missing.size > 3) box.addView(Ui.body(c, "+${missing.size - 3} mục khác trong Kiểm tra", Ui.TEXT_3, 12.5f).apply { setPadding(dp(32), dp(2), 0, dp(10)) })
+                if (missing.size > 3) box.addView(Ui.body(c, "+${missing.size - 3} mục khác trong Kiểm tra", Ui.TEXT_3, 13f).apply { setPadding(dp(16), dp(4), 0, dp(12)) })
             }
         }
     }
@@ -499,7 +510,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     private fun askText(title: String, hint: String, value: String, actions: List<Pair<String, (String) -> Unit>>) {
         val field = EditText(this).apply { this.hint = hint; setText(value); setSingleLine(); Ui.styleField(this) }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0); addView(field) }
-        val b = android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(title).setView(box)
+        val b = android.app.AlertDialog.Builder(this, (if (Ui.dark) android.R.style.Theme_DeviceDefault_Dialog_Alert else android.R.style.Theme_DeviceDefault_Light_Dialog_Alert)).setTitle(title).setView(box)
         actions.getOrNull(0)?.let { (t, f) -> b.setPositiveButton(t) { _, _ -> f(field.text.toString().trim()) } }
         actions.getOrNull(1)?.let { (t, f) -> b.setNeutralButton(t) { _, _ -> f(field.text.toString().trim()) } }
         actions.getOrNull(2)?.let { (t, f) -> b.setNegativeButton(t) { _, _ -> f(field.text.toString().trim()) } }
@@ -868,7 +879,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     }
 
     private fun label(text: String) = TextView(this).apply {
-        this.text = text; setTextColor(Ui.PRIMARY_LIGHT); textSize = 14f; setPadding(dp(4), dp(22), 0, dp(6)); typeface = Ui.bold
+        this.text = text; setTextColor(Ui.TEXT); textSize = 16f; setPadding(dp(4), dp(24), 0, dp(8)); typeface = Ui.heading
     }
 
     @SuppressLint("ClickableViewAccessibility")

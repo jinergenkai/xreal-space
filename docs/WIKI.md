@@ -386,11 +386,12 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - Phần phụ nào lỗi lúc khởi động thì chỉ phần đó tắt, app vẫn chạy; xem ở 🩺 Kiểm tra → mục "Khởi động".
 - Lấy log đầy đủ khi có ADB: `adb logcat -d -b crash` (lỗi Java/native gần nhất) hoặc `adb logcat -d | findstr xrealspace` (Windows).
 
-### Giao diện mới (0.13.0)
+### Giao diện (0.14.0) — theo minimal-ui-kit/material-kit-react
 
-- Phong cách theo bộ Minimal UI (dark): nền #141A21, thẻ #1C252E bo 16 dp, màu chính xanh #00A76F, chữ phụ #919EAB; mọi nút có viền sáng khi chọn bằng D-pad (Beam). Bộ widget ở `Ui.kt`. Font: dùng sans-serif hệ thống (chưa nhúng Public Sans).
-- Màn chính chỉ còn: trạng thái (chip), 1 nút lớn **Mở không gian**, 4 thẻ việc cần làm (**Xem phim · Làm việc · Đọc sách · Đi đường**), **Cần thiết lập** (3 mục còn thiếu từ Kiểm tra), và Kiểm tra / Remote / **Nâng cao** (toàn bộ nút cũ nằm ở đây).
-- Xem phim: hỏi địa chỉ trang (nhớ lần trước, mặc định YouTube), mở ở ô giữa, chế độ Rạp phim.
+- Token lấy từ repo `minimal-ui-kit/material-kit-react` (src/theme): grey #F9FAFB/#F4F6F8/#919EAB/#637381/#1C252E/#141A21, primary #1877F2, secondary #8E33FF, info #00B8D9, success #22C55E, warning #FFAB00, error #FF5630 (mỗi màu có lighter/light/dark/darker). Thẻ trắng bo 16 + bóng "card" của kit; nút bo 8, chữ đậm 14; nút chính = contained "inherit" (#1C252E); ô nhập viền mảnh; thẻ việc cần làm = AnalyticsWidgetSummary (gradient lighter→light 48 %, chữ màu darker); nhãn trạng thái = Label "soft".
+- Font: **Public Sans** (thân chữ — DM Sans của kit thiếu dấu tiếng Việt) + **Barlow Bold** (tiêu đề, như kit). OFL, nằm ở `assets/fonts` kèm giấy phép.
+- Điện thoại: giao diện sáng như kit. Beam: bản tối (grey 900/800) vì màn hình Beam chính là kính — nền trắng sẽ chói.
+- Màn chính: trạng thái → thẻ "Mở không gian" → 4 thẻ việc (Xem phim · Làm việc · Đọc sách · Đi đường) → Cần thiết lập → Kiểm tra / Remote / Nâng cao (mọi nút cũ).
 
 ### Chạy trên XREAL Beam đời đầu (0.11.0)
 

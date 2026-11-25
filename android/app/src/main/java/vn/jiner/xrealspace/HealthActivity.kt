@@ -21,7 +21,13 @@ class HealthActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        SpaceState.init(this); Assistant.init(this); Sensors.init(this)
+        SpaceState.init(this)
+        CrashLog.guard("Giọng nói (Vosk)") { Assistant.init(this) }
+        CrashLog.guard("Cảm biến kính (USB/IMU)") { Sensors.init(this) }
+        Ui.init(this, SpaceState.onBeam)
+        window.statusBarColor = Ui.BG
+        @Suppress("DEPRECATION")
+        if (!Ui.dark) window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(32)) }
         setContentView(ScrollView(this).apply { setBackgroundColor(Ui.BG); addView(col) })
         if (!Updater.checked) Updater.check(this) { render() }
