@@ -500,6 +500,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         // camera orientation (cam -> world)
         C = if (M == null || st.headLocked || wz != null) Mat3.eye()
             else Projection.camera(tracker.predicted(st.config.predictMs), M)
+        if (st.lookYaw != 0.0 || st.lookPitch != 0.0)
+            C = Mat3.mul(Mat3.mul(Mat3.rotY(st.lookYaw), Mat3.rotX(st.lookPitch)), C)
 
         val cfg = st.config
         // the whole space's anchor: identity when fixed in the room, trailing the head in cinema / travel mode

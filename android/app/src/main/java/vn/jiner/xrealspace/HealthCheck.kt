@@ -69,6 +69,11 @@ object HealthCheck {
             Updater.updateAvailable -> Status.WARN to Updater.status
             else -> Status.OK to Updater.status
         })
+        if (SpaceState.onBeam) {
+            // the Beam owns the glasses (USB, IMU, display, 3DoF) and mirrored-app control is not needed there
+            val beam = setOf(Req.GLASSES_USB, Req.GLASSES_DISPLAY, Req.IMU_DATA, Req.OVERLAY, Req.ACCESSIBILITY)
+            list.replaceAll { if (it.req in beam) Health.Item(it.req, Status.NA, "Trên Beam: Beam tự lo phần này") else it }
+        }
         return list
     }
 

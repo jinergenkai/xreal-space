@@ -207,7 +207,22 @@ object SpaceState {
     fun showGrid(secs: Double = 6.0) { gridUntil = System.currentTimeMillis() + (secs * 1000).toLong() }
 
     // ------------------------------------------------------------------ commands (keys, buttons, voice, gestures)
-    fun recenter() { recenterRequested = true; tracker.reset(); tutorialEvent(Tutorial.Event.RECENTER) }
+    fun recenter() { recenterRequested = true; lookYaw = 0.0; lookPitch = 0.0; tracker.reset(); tutorialEvent(Tutorial.Event.RECENTER) }
+
+    /**
+     * Running on an XREAL Beam: the Beam itself shows our screen on the glasses and does the 3DoF, it owns the
+     * glasses' USB/IMU, and there is no touchscreen. So we draw the space full-screen and turn the view with the D-pad.
+     */
+    val onBeam: Boolean get() = android.os.Build.MODEL.contains("Beam", true) ||
+        android.os.Build.MANUFACTURER.let { it.contains("xreal", true) || it.contains("nreal", true) }
+
+    /** manual look offset (deg) added on top of the head tracking: D-pad on the Beam, keys elsewhere */
+    @Volatile var lookYaw = 0.0
+    @Volatile var lookPitch = 0.0
+    fun look(dYaw: Double, dPitch: Double) {
+        lookYaw = ((lookYaw + dYaw + 540) % 360) - 180
+        lookPitch = (lookPitch + dPitch).coerceIn(-60.0, 60.0)
+    }
 
     // ------------------------------------------------------------------ first-run tutorial (on the glasses)
     var tutorial: Tutorial? = null; private set

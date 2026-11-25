@@ -173,6 +173,12 @@ class MainActivity : Activity(), TouchpadView.Host {
         dm.registerDisplayListener(displayListener, ui)
         SpaceState.log("App start. Android ${android.os.Build.VERSION.RELEASE} / ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         CrashLog.guard("Kết nối kính (USB)") { connectGlasses() }
+        // Beam: no external display to present on -> the space goes full-screen here and the Beam puts it on the glasses
+        if (SpaceState.onBeam && glassesDisplay() == null) {
+            SpaceState.log("XREAL Beam detected -> space full-screen, D-pad controls")
+            showOnPhone()
+            SpaceState.notify("Điều khiển trên Beam", "◀▶▲▼ xoay nhìn · nút giữa = bấm vào ô · Back = menu", Colors.CYAN, 8.0)
+        }
         handleIntent(intent)
     }
 
@@ -239,6 +245,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION).firstOrNull { it.displayId != Display.DEFAULT_DISPLAY }
 
     private fun showOnGlasses(quiet: Boolean = false) {
+        if (SpaceState.onBeam && glassesDisplay() == null) { showOnPhone(); return }   // Beam: this screen IS the glasses
         wantGlassesOutput = true
         if (presentation != null || serviceHosted) { showTouchpad(true); return }
         // preferred: host the glasses in the foreground service so they stay on when you open another app
@@ -423,6 +430,20 @@ class MainActivity : Activity(), TouchpadView.Host {
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (crashScreen) return super.onKeyDown(keyCode, event)
         val st = SpaceState
+        // Beam / any D-pad remote while the space is on this screen: arrows turn the view, centre clicks at the dot
+        if (phoneSpace != null && st.onBeam && Assistant.prompter == null) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { st.look(25.0, 0.0); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { st.look(-25.0, 0.0); return true }
+                KeyEvent.KEYCODE_DPAD_UP -> { st.look(0.0, 15.0); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { st.look(0.0, -15.0); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> {
+                    if (event.repeatCount == 0) { if (space?.clickAtGaze() != true) st.showGrid(4.0) }
+                    else if (event.repeatCount == 4) pushToTalk()          // hold centre = talk
+                    return true
+                }
+            }
+        }
         when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> {
                 if (event.repeatCount == 0) event.startTracking()

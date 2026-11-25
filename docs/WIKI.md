@@ -386,6 +386,14 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - Phần phụ nào lỗi lúc khởi động thì chỉ phần đó tắt, app vẫn chạy; xem ở 🩺 Kiểm tra → mục "Khởi động".
 - Lấy log đầy đủ khi có ADB: `adb logcat -d -b crash` (lỗi Java/native gần nhất) hoặc `adb logcat -d | findstr xrealspace` (Windows).
 
+### Chạy trên XREAL Beam đời đầu (0.11.0)
+
+- Beam tự đưa màn hình của nó lên kính và tự làm 3DoF; nó giữ USB/IMU của kính. App phát hiện Beam (Build.MODEL/MANUFACTURER) → **không gian tự mở toàn màn hình**, Beam chiếu nó lên kính.
+- Điều khiển: ◀▶ xoay nhìn 25°, ▲▼ ngẩng/cúi 15°, **nút giữa** = bấm vào ô ở chấm giữa (bấm vào chỗ trống = hiện lưới ô), **giữ nút giữa** = nói lệnh, **Back** = về menu (nút "Xem trên màn hình này" để vào lại).
+- Mục Kiểm tra: kính USB / màn hình kính / IMU / overlay / Accessibility đánh dấu "Beam tự lo".
+- Accessibility trên Beam báo "app đang che yêu cầu" (tapjacking protection: có lớp phủ nằm trên trang Cài đặt, nhiều khả năng là lớp hiển thị của chính Beam). Trên Beam không cần Accessibility (nó chỉ dùng cho app điện thoại được mirror). Nếu sau này cần: `adb shell settings put secure enabled_accessibility_services vn.jiner.xrealspace/.ControlService` (chưa thử).
+- TTS: Beam không có engine đọc chữ → muốn đọc to phải cài một engine (vd. Google TTS APK) — chưa thử.
+
 ### Crash đầu tiên trên Beam (26/11/2026, 0.10.1)
 
 - `SecurityException: ACCESS_NETWORK_STATE` ở `HealthCheck.collect` → `MainActivity.onResume`. Manifest thiếu quyền; Android 11 của Beam bắt chặt. Sửa ở 0.10.3: khai báo ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE / CHANGE_WIFI_MULTICAST_STATE (NSD), bọc kiểm tra mạng và cả `refreshSetup` để phần trạng thái không bao giờ làm chết app.
