@@ -35,7 +35,7 @@ object Sensors {
     }
 
     private fun onUsbState() {
-        if (usb.connected) { keepAlive(); startSpeed() } else stopSpeed()
+        if (usb.connected) { keepAlive(); startSpeed() } else if (!Navigation.active) stopSpeed()
         listener?.invoke()
     }
 
@@ -45,11 +45,18 @@ object Sensors {
     private var lastFixMs = 0L
     val speedKmh get() = speed.kmh
     val speedRunning get() = lm != null
+    /** last GPS fix (null = none yet / GPS off). Read by the map and the navigator. */
+    @Volatile var location: Location? = null; private set
+    /** last direction of travel (deg, 0 = north); kept when standing still, where GPS bearing is noise */
+    @Volatile var headingDeg = 0.0; private set
 
     private val locListener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
             lastFixMs = System.currentTimeMillis()
-            if (loc.hasSpeed() && speed.update(loc.speed.toDouble(), lastFixMs)) applySpeedLock(speed.fast)
+            location = loc
+            if (loc.hasBearing() && loc.hasSpeed() && loc.speed > 1.5f) headingDeg = loc.bearing.toDouble()
+            if (loc.hasSpeed() && speed.update(loc.speed.toDouble(), lastFixMs) && SpaceState.rideSafety) applySpeedLock(speed.fast)
+            Navigation.onLocation(loc)
         }
         @Deprecated("Deprecated in Java") override fun onStatusChanged(p: String?, s: Int, b: android.os.Bundle?) {}
         override fun onProviderEnabled(p: String) {}
@@ -64,9 +71,9 @@ object Sensors {
         }
     }
 
-    /** GPS only while the glasses are plugged in and the user has not turned the safety lock off. */
+    /** GPS runs while the glasses are plugged in (riding lock + map) or while navigating. */
     fun startSpeed() {
-        if (lm != null || !SpaceState.rideSafety) return
+        if (lm != null) return
         if (app.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val m = app.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         try {
@@ -80,7 +87,8 @@ object Sensors {
     fun stopSpeed() {
         lm?.let { try { it.removeUpdates(locListener) } catch (_: Exception) {} }
         lm = null; main.removeCallbacks(watchdog)
-        if (speed.lost()) applySpeedLock(false)
+        if (speed.lost() && SpaceState.speedLocked) applySpeedLock(false)
+        location = null
     }
 
     private fun applySpeedLock(on: Boolean) {

@@ -174,6 +174,10 @@ Các hàm:
 - captions {mode:"off"|"vi"|"en"|"en_vi"|"vi_en"}   phụ đề trực tiếp / phiên dịch
 - prompter {on:true|false|null}   teleprompter chạy theo giọng đọc
 - back {} / home {}   quay lại / về màn hình chính của điện thoại
+- navigate {dest:string, profile:"car"|"bike"|"foot"}   chỉ đường thật (GPS) tới địa điểm
+- stop_navigation {}   dừng chỉ đường
+- ad_block {on:bool}   chặn quảng cáo / cửa sổ bật lên trên trang web (xem phim)
+- desktop_site {on:bool}   trang web bản máy tính (true) hoặc bản điện thoại (false)
 - read_notifications {}   đọc các thông báo mới của điện thoại
 - reply {text}   trả lời tin nhắn mới nhất (Zalo, Messenger, SMS…) bằng nội dung text
 - mute_notifications {on:true|false, app:string|null}   tắt/bật thông báo một app; app null = chế độ im lặng
@@ -237,6 +241,12 @@ Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì d�
                 "back" -> VoiceCommands.Cmd.Back
                 "home" -> VoiceCommands.Cmd.Home
                 "read_notifications" -> VoiceCommands.Cmd.ReadNotifs
+                "navigate" -> (m["dest"] as? String)?.takeIf { it.isNotBlank() }?.let {
+                    VoiceCommands.Cmd.Navigate(it, (m["profile"] as? String)?.takeIf { p -> p in setOf("car", "bike", "foot") } ?: "car")
+                }
+                "stop_navigation" -> VoiceCommands.Cmd.StopNav
+                "ad_block" -> VoiceCommands.Cmd.AdBlock(m["on"] != false)
+                "desktop_site" -> VoiceCommands.Cmd.DesktopSite(m["on"] != false)
                 "reply" -> (m["text"] as? String)?.takeIf { it.isNotBlank() }?.let { VoiceCommands.Cmd.Reply(it) }
                 "mute_notifications" -> VoiceCommands.Cmd.MuteNotifs(m["on"] != false, (m["app"] as? String)?.ifBlank { null })
                 "answer" -> (m["text"] as? String)?.let { VoiceCommands.Cmd.Answer(it) }

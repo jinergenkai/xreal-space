@@ -419,4 +419,78 @@ class CoreTest {
         val r = LlmProtocol.parseReply("""{"actions":[{"fn":"reply","text":"đang bận"},{"fn":"mute_notifications","on":true,"app":null}]}""")
         assertEquals(listOf(VoiceCommands.Cmd.Reply("đang bận"), VoiceCommands.Cmd.MuteNotifs(true, null)), r.cmds)
     }
+
+    // ---------------------------------------------------------------- 0.7: GPS navigation, 3D, films
+    private val osrmJson = """{"code":"Ok","routes":[{"distance":420.5,"duration":95.0,
+      "geometry":{"type":"LineString","coordinates":[[106.7000,10.7700],[106.7000,10.7720],[106.7020,10.7720]]},
+      "legs":[{"steps":[
+        {"distance":222.4,"name":"Lê Lợi","maneuver":{"type":"depart","modifier":"","location":[106.7000,10.7700]}},
+        {"distance":218.6,"name":"Nguyễn Huệ","maneuver":{"type":"turn","modifier":"right","location":[106.7000,10.7720]}},
+        {"distance":0,"name":"","maneuver":{"type":"arrive","modifier":"","location":[106.7020,10.7720]}}]}]}]}"""
+
+    @Test fun geoMath() {
+        val a = LatLon(10.7700, 106.7000); val b = LatLon(10.7720, 106.7000)
+        assertEquals(222.4, Geo.distance(a, b), 0.5)                       // 0.002° lat ≈ 222 m
+        assertEquals(0.0, Geo.bearing(a, b), 0.01)                          // due north
+        assertEquals(90.0, Geo.bearing(b, LatLon(10.7720, 106.7020)), 0.1)  // due east
+        val (x, y) = Geo.toLocal(a, b); assertEquals(0.0, x, 0.01); assertEquals(222.4, y, 0.5)
+        val (px, py) = Geo.worldPx(LatLon(0.0, 0.0), 1); assertEquals(256.0, px, 1e-6); assertEquals(256.0, py, 1e-6)
+        assertEquals(1, Geo.tileOf(300.0))
+    }
+
+    @Test fun osmParsersAndTurnText() {
+        val r = OsmApi.parseRoute(osrmJson)!!
+        assertEquals(3, r.points.size); assertEquals(3, r.steps.size); assertEquals(420.5, r.distanceM, 1e-9)
+        assertEquals("Rẽ phải vào Nguyễn Huệ", r.steps[1].text()); assertEquals("right", r.steps[1].arrow())
+        assertEquals("Đến nơi", r.steps[2].text())
+        assertNull(OsmApi.parseRoute("""{"code":"NoRoute","routes":[]}"""))
+        val p = OsmApi.parsePlace("""[{"lat":"10.7725","lon":"106.6980","name":"Chợ Bến Thành","display_name":"Chợ Bến Thành, Quận 1"}]""")!!
+        assertEquals("Chợ Bến Thành", p.name); assertEquals(10.7725, p.at.lat, 1e-9)
+        assertNull(OsmApi.parsePlace("[]"))
+        assertTrue(OsmApi.searchUrl("bến thành", null).contains("q=b%E1%BA%BFn+th%C3%A0nh"))
+        assertTrue(OsmApi.routeUrl(LatLon(1.0, 2.0), LatLon(3.0, 4.0), "foot").contains("routed-foot/route/v1/driving/2.0,1.0;4.0,3.0"))
+    }
+
+    @Test fun navTrackerFollowsRoute() {
+        val nav = NavTracker(OsmApi.parseRoute(osrmJson)!!, "Nguyễn Huệ")
+        val s1 = nav.update(LatLon(10.7710, 106.70003))                    // halfway up the first street, 3 m off
+        assertEquals("right", s1.next?.arrow()); assertEquals(111.0, s1.toNextM, 3.0)
+        assertTrue(s1.offRouteM < 5); assertFalse(s1.arrived); assertEquals(330.0, s1.remainM, 5.0)
+        val s2 = nav.update(LatLon(10.7721, 106.7010))                     // after the turn
+        assertEquals("Đến nơi", s2.next?.text())
+        assertTrue(nav.update(LatLon(10.7745, 106.7000)).offRouteM > 200)   // wandered off
+        assertTrue(nav.update(LatLon(10.7720, 106.70195)).arrived)
+        assertEquals("1.2 km", NavFmt.dist(1234.0)); assertEquals("340 m", NavFmt.dist(345.0))
+    }
+
+    @Test fun parseNavigationAndFilmCommands() {
+        assertEquals(VoiceCommands.Cmd.Navigate("Chợ Bến Thành", "car"), VoiceCommands.parse("chỉ đường tới Chợ Bến Thành"))
+        assertEquals(VoiceCommands.Cmd.Navigate("Highlands Nguyễn Huệ", "foot"), VoiceCommands.parse("đi bộ đến Highlands Nguyễn Huệ"))
+        assertEquals(VoiceCommands.Cmd.Navigate("the airport", "car"), VoiceCommands.parse("navigate to the airport"))
+        assertEquals(VoiceCommands.Cmd.StopNav, VoiceCommands.parse("dừng chỉ đường"))
+        assertEquals(VoiceCommands.Cmd.AdBlock(false), VoiceCommands.parse("tắt chặn quảng cáo"))
+        assertEquals(VoiceCommands.Cmd.AdBlock(true), VoiceCommands.parse("chặn quảng cáo"))
+        assertEquals(VoiceCommands.Cmd.DesktopSite(true), VoiceCommands.parse("bản máy tính"))
+        assertEquals(VoiceCommands.Cmd.Map(true), VoiceCommands.parse("mở bản đồ"))                   // unchanged
+    }
+
+    @Test fun stereoAdsAndResume() {
+        assertTrue(Stereo.isSbs(3840, 1080)); assertFalse(Stereo.isSbs(1920, 1080))
+        val f = 1000.0
+        assertEquals(0f, Stereo.shiftPx(4.0, f), 1e-4f)                     // at the optics' distance: no shift
+        assertTrue(Stereo.shiftPx(1.5, f) > 0f)                             // nearer: pops out
+        assertTrue(Stereo.shiftPx(1.0, f) > Stereo.shiftPx(2.0, f))
+        assertTrue(AdFilter.isAd("pagead2.googlesyndication.com")); assertTrue(AdFilter.isAd("POPADS.NET"))
+        assertFalse(AdFilter.isAd("youtube.com")); assertFalse(AdFilter.isAd("notdoubleclick.net"))
+        assertTrue(AdFilter.isHijack("phim.example.com", "win-prize.xyz", hasGesture = false, isRedirect = false))
+        assertFalse(AdFilter.isHijack("phim.example.com", "cdn.example.com", false, false))       // same site
+        assertFalse(AdFilter.isHijack("phim.example.com", "accounts.google.com", false, true))    // server redirect
+        assertFalse(AdFilter.isHijack("phim.example.com", "other.com", true, false))              // user tapped
+        assertEquals("bbc.co.uk", AdFilter.site("www.bbc.co.uk"))
+        val r = ResumeStore()
+        r.save("https://phim.x/ep1?utm_source=fb", 754.0, 2700.0); assertEquals(754.0, r.get("https://phim.x/ep1"), 1e-9)
+        r.save("https://phim.x/ep1", 12.0, 2700.0); assertEquals(0.0, r.get("https://phim.x/ep1"), 1e-9)   // restarted -> forget
+        r.save("https://phim.x/ep2", 2690.0, 2700.0); assertEquals(0.0, r.get("https://phim.x/ep2"), 1e-9) // finished
+        assertEquals("12:34", ResumeStore.clock(754.0)); assertEquals("1:02:03", ResumeStore.clock(3723.0))
+    }
 }

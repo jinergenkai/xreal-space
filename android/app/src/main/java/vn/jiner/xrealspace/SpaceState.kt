@@ -79,6 +79,14 @@ object SpaceState {
     @Volatile var speedLocked = false
     /** user setting: hide screens when moving fast (default on) */
     var rideSafety = true
+    /** film sites: block ad hosts, pop-up windows and redirects to other sites (default on) */
+    var adBlock = true
+    /** draw real 3D (one image per eye) when the glasses are in SBS mode */
+    var stereo3d = true
+    /** distance (m) that looks "flat" in 3D: things nearer pop out. Air 2 optics ≈ 4 m */
+    var stereoConvergeM = 4.0
+    /** "continue watching" positions, url -> seconds */
+    val resume = vn.jiner.xrealspace.core.ResumeStore()
     /** phone notification currently popped up on the glasses (nod = reply to it) */
     var toastNotifKey: String? = null
     var remoteBlurSink: (() -> Boolean)? = null
@@ -101,6 +109,8 @@ object SpaceState {
         fun setPrompter(on: Boolean?)
         /** reply to a phone notification (key null = newest one with a reply box) */
         fun replyNotif(text: String, key: String?)
+        /** switch the page you're looking at to its desktop / mobile layout */
+        fun setDesktopSite(on: Boolean)
     }
     var controller: Controller? = null
 
@@ -313,6 +323,10 @@ object SpaceState {
             VoiceCommands.Cmd.Calibrate -> startWizard()
             VoiceCommands.Cmd.Notify -> demoNotification()
             VoiceCommands.Cmd.ReadNotifs -> PhoneNotifs.read()
+            is VoiceCommands.Cmd.Navigate -> Navigation.start(cmd.dest, cmd.profile)
+            VoiceCommands.Cmd.StopNav -> Navigation.stop()
+            is VoiceCommands.Cmd.AdBlock -> { adBlock = cmd.on; saveSettings(); notify("Chặn quảng cáo", if (cmd.on) "bật" else "tắt", Colors.CYAN, 2.0) }
+            is VoiceCommands.Cmd.DesktopSite -> controller?.setDesktopSite(cmd.on)
             is VoiceCommands.Cmd.Reply -> controller?.replyNotif(cmd.text, null)
             is VoiceCommands.Cmd.MuteNotifs -> PhoneNotifs.mute(cmd.on, cmd.app)
             VoiceCommands.Cmd.Grab -> toggleGrab()
@@ -380,6 +394,9 @@ object SpaceState {
             .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("rideSafety", rideSafety)
+            .put("adBlock", adBlock)
+            .put("stereo3d", stereo3d).put("stereoConvergeM", stereoConvergeM)
+            .put("resume", org.json.JSONObject().apply { resume.entries().forEach { (k, v) -> put(k, v) } })
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
             .put("jevBaseUrl", jevBaseUrl).put("jevModel", jevModel).put("jevKey", jevKey)
             .put("llmProvider", llmProvider).put("llmBaseUrl", llmBaseUrl).put("llmModel", llmModel).put("llmKey", llmKey)
@@ -399,6 +416,9 @@ object SpaceState {
             sttEngine = runCatching { SttEngine.valueOf(o.optString("sttEngine", sttEngine.name)) }.getOrDefault(sttEngine)
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)
             rideSafety = o.optBoolean("rideSafety", rideSafety)
+            adBlock = o.optBoolean("adBlock", adBlock)
+            stereo3d = o.optBoolean("stereo3d", stereo3d); stereoConvergeM = o.optDouble("stereoConvergeM", stereoConvergeM)
+            o.optJSONObject("resume")?.let { r -> resume.load(r.keys().asSequence().associateWith { r.getDouble(it) }) }
             wakePhrases = o.optString("wakePhrases", wakePhrases.joinToString("|")).split("|").map { it.trim() }.filter { it.isNotEmpty() }
                 .ifEmpty { WakeWord.DEFAULT_PHRASES }
             jevBaseUrl = o.optString("jevBaseUrl", jevBaseUrl); jevModel = o.optString("jevModel", jevModel); jevKey = o.optString("jevKey", jevKey)

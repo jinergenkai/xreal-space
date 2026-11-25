@@ -261,6 +261,13 @@ object VoiceCommands {
         object Notify : Cmd()
         /** read out the latest phone notifications on the glasses */
         object ReadNotifs : Cmd()
+        /** real GPS navigation; profile "car" | "bike" | "foot" */
+        data class Navigate(val dest: String, val profile: String = "car") : Cmd()
+        object StopNav : Cmd()
+        /** film sites: block ads / pop-ups / redirects */
+        data class AdBlock(val on: Boolean) : Cmd()
+        /** desktop version of the page you're looking at (true) / mobile (false) */
+        data class DesktopSite(val on: Boolean) : Cmd()
         /** reply to the latest notification that has a reply box (Zalo, Messenger, SMS…) */
         data class Reply(val text: String) : Cmd()
         /** mute (on=true) / unmute an app's pop-ups; app=null means do-not-disturb for all */
@@ -351,6 +358,19 @@ object VoiceCommands {
         val t = fold(text)
         fun has(vararg k: String) = k.any { Regex("(?:^|\\s)" + Regex.escape(it) + "(?:\\s|$)").containsMatchIn(t) }
         val slot = SlotGrid.parseSlot(t)
+
+        // navigation: "chỉ đường tới Bến Thành", "đi bộ đến Highlands Nguyễn Huệ", "navigate to …"
+        Regex("^(?:chi duong|dan duong|di bo|dap xe|di xe dap|di xe|di|navigate|directions)\\s+(?:toi|den|ve|to)\\s+(.+)$").find(t)?.let { m ->
+            val profile = when { t.startsWith("di bo") -> "foot"; t.startsWith("dap xe") || t.startsWith("di xe dap") -> "bike"; else -> "car" }
+            // keep the user's own spelling/accents for the place name (search works better with diacritics)
+            val words = text.trim().split(Regex("\\s+")); val skip = t.substring(0, m.groups[1]!!.range.first).trim().split(' ').size
+            return Cmd.Navigate(words.drop(skip).joinToString(" ").ifBlank { m.groupValues[1] }, profile)
+        }
+        if (has("dung chi duong", "huy chi duong", "tat chi duong", "ket thuc chi duong", "stop navigation")) return Cmd.StopNav
+        if (has("tat chan quang cao", "bo chan quang cao", "allow ads")) return Cmd.AdBlock(false)   // before the "on" rule: it contains it
+        if (has("chan quang cao", "block ads")) return Cmd.AdBlock(true)
+        if (has("ban may tinh", "giao dien may tinh", "desktop site", "desktop mode")) return Cmd.DesktopSite(true)
+        if (has("ban dien thoai", "giao dien dien thoai", "mobile site")) return Cmd.DesktopSite(false)
 
         // phone notifications (before generic "tắt …" / "mở …" rules)
         if (t.startsWith("tra loi ") || t.startsWith("reply ")) {

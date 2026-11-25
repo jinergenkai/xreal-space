@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.6.0
+Cập nhật: 25/11/2026 · bản 0.7.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -77,6 +77,11 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Khác | Icon app; script build APK bằng Docker (`android/scripts/build-apk.sh`) | Chờ build | 0.5 |
 | Thông báo | Thông báo thật của điện thoại hiện trên kính (Zalo, Messenger, SMS…), bỏ trùng lặp, bỏ thông báo hệ thống | Chờ test | 0.6 |
 | Thông báo | Gật đầu = trả lời bằng giọng, lắc = bỏ qua; "trả lời …", "đọc thông báo", "tắt thông báo Zalo", "im lặng" | Chờ test | 0.6 |
+| Bản đồ | Bản đồ thật (OpenStreetMap, nền tối, xoay theo hướng đi); chưa có GPS thì dùng tuyến demo | Chờ test | 0.7 |
+| Bản đồ | Chỉ đường bằng giọng: "chỉ đường tới …" / "đi bộ đến …", rẽ tiếp theo + khoảng cách + giờ đến, báo trước 150 m, đi lệch tự tìm đường mới | Chờ test | 0.7 |
+| Phim web | Chặn quảng cáo (danh sách tên miền), chặn cửa sổ bật lên và chuyển trang lạ không do bấm | Chờ test | 0.7 |
+| Phim web | Bản máy tính / bản điện thoại cho trang đang nhìn; tự nhớ chỗ đang xem và xem tiếp | Chờ test | 0.7 |
+| 3D | Kính ở chế độ SBS (giữ Độ sáng+): mỗi mắt một hình, màn hình gần thì nổi ra; phim 3D SBS trải đủ hai mắt; chỉnh độ nổi | Chờ test (thử nghiệm) | 0.7 |
 | An toàn | Đi nhanh hơn ~15 km/h (GPS): ẩn màn hình, thoát rạp phim, thông báo chỉ hiện tên app, không cho trả lời | Chờ test | 0.6 |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
@@ -128,6 +133,16 @@ F head-lock · H status · C hiệu chỉnh trục · B đo lại bias · ↑/�
 Tin nhắn mới hiện ở góc kính: **gật đầu** = nói câu trả lời (im 1 giây là gửi), **lắc** = bỏ qua. Hoặc nói:
 "đọc thông báo" · "trả lời tối nay 7h nhé" (trả lời tin mới nhất) · "tắt thông báo Zalo" / "bật thông báo Zalo" · "im lặng" / "bật thông báo".
 Trả lời dùng ô trả lời có sẵn trong thông báo của app (giống trả lời từ thanh thông báo), nên app nào không có ô đó thì không trả lời được.
+
+**Bản đồ & chỉ đường (0.7):** cần quyền Vị trí. Có GPS là ô bản đồ chuyển sang bản đồ thật, xoay theo hướng đi.
+Nói "chỉ đường tới Chợ Bến Thành" (xe máy/ô tô), "đi bộ đến …", "đạp xe tới …", "dừng chỉ đường"; hoặc gõ ở mục Bản đồ trong app.
+Dùng dịch vụ miễn phí của OpenStreetMap (tìm địa điểm: Nominatim, tìm đường: OSRM). Tên địa điểm nên nói có dấu và cụ thể (thêm quận/đường).
+
+**Xem phim trên web (0.7):** chặn quảng cáo bật sẵn ("tắt chặn quảng cáo" nếu trang bị lỗi). Trang chật thì nói "bản máy tính".
+Trang tự nhớ chỗ đang xem; mở lại là xem tiếp (chỉ với video nằm trực tiếp trong trang, không với video trong khung nhúng của trang khác).
+
+**3D (0.7, thử nghiệm):** giữ nút **Độ sáng +** trên kính ~2 giây → kính chuyển 3840×1080 (SBS), app tự nhận và vẽ mỗi mắt một hình: các màn ở gần nổi ra trước.
+Phim 3D SBS: bật toàn màn hình là trải đủ hai mắt. Phim thường: giữ nút lần nữa để về 2D. Mỏi mắt → "Độ nổi +" (giảm độ nổi) hoặc tắt 3D trong app.
 
 **An toàn khi đi xe:** cấp quyền **Vị trí** (chỉ đọc tốc độ, không lưu, không gửi). Khi đang cắm kính mà đi nhanh hơn ~15 km/h trong 3 giây:
 màn hình ẩn, video thoát toàn màn hình, thông báo chỉ hiện tên app. Chậm dưới ~8 km/h trong 6 giây thì hiện lại. Tắt được ở mục Thông báo & an toàn.
@@ -240,6 +255,9 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Mở app khác 5 phút rồi quay lại: kính vẫn bám đầu (IMU chạy nền)
 - [ ] Trang Google đăng nhập: được không; nếu không, "Mở bằng Chrome" + chiếu màn hình
 - [ ] Beam đời đầu: app tự vào chế độ máy chủ; điện thoại "Điều khiển máy kính" tự tìm thấy (hoặc nhập IP)
+- [ ] Bản đồ: ra ngoài trời → ô bản đồ hiện bản đồ thật, mũi tên theo hướng đi; "chỉ đường tới <chỗ gần>" → đường xanh, báo rẽ trước ~150 m, đi lệch → tìm đường mới
+- [ ] Phim: mở 1 trang phim nhiều quảng cáo → ít pop-up / chuyển trang; xem 5 phút, đóng, mở lại → "Xem tiếp từ …"; "bản máy tính" đổi giao diện
+- [ ] 3D: giữ Độ sáng+ 2 giây → app báo "Chế độ 3D", màn hình có chiều sâu, không bị nhân đôi/lệch khó chịu; mở video 3D SBS toàn màn → nổi khối. Nếu mắt nhòe/lệch: thử Độ nổi ±, ghi lại giá trị dễ chịu
 - [ ] Cấp "Đọc thông báo ĐT"; nhờ người nhắn Zalo → tin hiện trên kính; gật → nói → người kia nhận được
 - [ ] "đọc thông báo", "tắt thông báo Zalo", "im lặng" có tác dụng
 - [ ] Cấp Vị trí, cắm kính, đi xe máy (người khác lái!) hoặc chạy xe đạp > 15 km/h: màn ẩn, dừng lại thì hiện
@@ -284,6 +302,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 | Hãng điện thoại tự tắt app chạy nền (Xiaomi, Oppo, Vivo, Samsung) | Kính đứng hình khi tắt màn / mở app khác lâu | Thẻ Thiết lập: không tối ưu pin + Tự khởi chạy |
 | Một app giữ mic tại một thời điểm | Mở app khác dùng mic (gọi điện, Zalo voice) → mất lệnh giọng | Không có cách sạch; app nhường mic khi bị chiếm |
 | Google chặn đăng nhập trong WebView | Gmail, YouTube đăng nhập có thể lỗi | Đã đổi UA; vẫn lỗi thì "Mở bằng Chrome" + chiếu màn hình |
+| Dịch vụ bản đồ OSM miễn phí (tile, Nominatim, OSRM) | Chỉ hợp dùng nhẹ / demo; giới hạn ~1 lượt tìm/giây, có thể chậm hoặc từ chối | Phát hành thật cần nhà cung cấp riêng (MapTiler, Mapbox, Goong cho VN) hoặc tự host |
 | Kính chỉ 3DoF, không camera | Không bám vật thật, không nhận tay | Giới hạn phần cứng Air 2 |
 | Nóng & pin | Xuất hình + nhiều WebView + mic liên tục tốn pin nhanh | Cần đo khi test (mục 7) |
 
@@ -318,7 +337,10 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 - [ ] network-security-config: chỉ cho HTTP tới IP nội bộ.
 - [x] Thông báo thật của điện thoại lên kính, đọc / trả lời bằng giọng (0.6).
 - [x] Ẩn màn khi đi nhanh theo GPS (0.6).
-- [ ] Bản đồ GPS thật thay tuyến giả.
+- [x] Bản đồ GPS thật + chỉ đường (0.7).
+- [x] Xem phim web: chặn quảng cáo / pop-up / chuyển trang, bản máy tính, xem tiếp (0.7).
+- [x] 3D SBS: chiều sâu cho màn hình + phim 3D (0.7, cần chỉnh trên kính thật).
+- [ ] Render GL: méo phối cảnh khi nhìn xiên (chưa cần lắm vì màn luôn quay về phía mắt).
 - [ ] Backend nhỏ giữ key Jev / LLM, đếm lượt (Docker, chạy trên server của Hùng).
 - [ ] Render GL: méo phối cảnh, 3D SBS cho phim 3D.
 
@@ -334,6 +356,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.7.0 | Bản đồ GPS thật (OSM) + chỉ đường bằng giọng; xem phim web: chặn quảng cáo/pop-up/chuyển trang, bản máy tính, xem tiếp; 3D SBS: chiều sâu cho màn hình và phim 3D |
 | 25/11/2026 | 0.6.0 | Thông báo thật của điện thoại trên kính + trả lời bằng giọng (gật đầu / "trả lời …"), tắt thông báo theo app, im lặng; ẩn màn khi đi nhanh theo GPS |
 | 25/11/2026 | 0.5.1 | Mã ghép đôi 4 số cho điều khiển từ xa (khoá 60 s sau 5 lần sai, người lạ không đá được máy đang nối); APK build thật lần đầu trên GitHub Actions |
 | 25/11/2026 | repo | Gom về monorepo GitHub `jinergenkai/xreal-space`: `android/` (giữ lịch sử commit), `pc/`, `pythontest/`, wiki ở `docs/`; CI build APK + test Python |

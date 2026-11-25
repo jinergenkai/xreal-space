@@ -11,6 +11,11 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.graphics.SurfaceTexture
+import android.net.Uri
+import android.webkit.WebResourceResponse
+import vn.jiner.xrealspace.core.AdFilter
+import vn.jiner.xrealspace.core.ResumeStore
+import vn.jiner.xrealspace.core.Stereo
 import android.os.Build
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -60,15 +65,69 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             "document.addEventListener('focusin',function(v){var e=v.target;if(t(e))XSpace.focus(e.type||'text',e.isContentEditable?(e.innerText||''):(e.value||''));},true);" +
             "document.addEventListener('focusout',function(v){if(t(v.target))XSpace.blur();},true);})();"
 
+        /**
+         * "continue watching": reports the biggest video's position every 5 s and, the first time a video
+         * starts, jumps to where you stopped last time. Main frame only (videos inside a cross-site iframe
+         * are out of reach of the app).
+         */
+        const val RESUME_JS = "(function(){if(window.__xsr)return;window.__xsr=1;" +
+            "function big(){var b=null,a=0;document.querySelectorAll('video').forEach(function(v){var s=v.clientWidth*v.clientHeight;if(s>a){a=s;b=v;}});return b;}" +
+            "var done=new WeakSet();" +
+            "document.addEventListener('playing',function(e){var v=e.target;if(!(v instanceof HTMLVideoElement)||done.has(v))return;done.add(v);" +
+            "var t=XSpace.resumeAt(location.href);if(t>0&&Math.abs(v.currentTime-t)>20&&(!v.duration||t<v.duration-30)){v.currentTime=t;XSpace.resumed(t);}},true);" +
+            "setInterval(function(){var v=big();if(v&&!v.paused&&v.duration>120)XSpace.videoPos(location.href,v.currentTime,v.duration);},5000);})();"
+
+        const val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+        fun EMPTY_RESPONSE() = WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+
         /** dark mode for old Android (< 10): invert the page, re-invert media */
         const val CSS_DARK_JS = "(function(){var s=document.createElement('style');" +
             "s.textContent='html{filter:invert(1) hue-rotate(180deg);background:#fff}img,video,picture,canvas,iframe{filter:invert(1) hue-rotate(180deg)}';" +
             "document.head.appendChild(s);})();"
     }
 
+    private var lastResumeSave = 0L
+
+    // ---- side-by-side 3D: glasses switched to 3840×1080 (hold Brightness+ ~2 s). Each eye = one half.
+    private var sbs = false
+    private var eyeW = 0
+    private var focalPx = 0.0
+    /** per-view horizontal shift for one eye, from that view's distance (near = pops out) */
+    private val eyeShift = HashMap<View, Float>()
+
+    override fun dispatchDraw(canvas: android.graphics.Canvas) {
+        if (!sbs) { super.dispatchDraw(canvas); return }
+        val t = drawingTime
+        for (eye in 0..1) {
+            canvas.save()
+            canvas.clipRect(eye * eyeW, 0, (eye + 1) * eyeW, height)
+            canvas.translate((eye * eyeW).toFloat(), 0f)
+            for (i in 0 until childCount) {
+                val c = getChildAt(i)
+                if (c === cinema || c.visibility != VISIBLE) continue
+                val sh = (eyeShift[c] ?: 0f) * (if (eye == 0) 1 else -1)
+                canvas.save(); canvas.translate(sh, 0f); drawChild(canvas, c, t); canvas.restore()
+            }
+            canvas.restore()
+        }
+        // a 3D (SBS) film is already two images side by side: draw it once across both halves
+        if (cinema.visibility == VISIBLE) drawChild(canvas, cinema, t)
+    }
+
     inner class Panel(val index: Int) {
         val frame = FrameLayout(context)
         val web = WebView(context)
+        var mobileUa = ""
+        var desktop = false
+
+        /** desktop layout (many film / office sites are cramped in their mobile version) */
+        fun setDesktop(on: Boolean) {
+            if (on == desktop || isMirror) return
+            desktop = on
+            web.settings.userAgentString = if (on) DESKTOP_UA else mobileUa
+            web.reload()
+        }
         /** a panel showing the phone screen (MediaProjection) instead of a web page */
         val isMirror = SpaceState.config.screens.getOrNull(index)?.url == Assistant.MIRROR_URL
         var mirrorView: TextureView? = null
@@ -96,12 +155,24 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 setSupportZoom(true); builtInZoomControls = true; displayZoomControls = false
                 // Google refuses sign-in when the UA says "; wv" (embedded WebView). Look like plain Chrome.
                 userAgentString = userAgentString.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+ "), "")
+                mobileUa = userAgentString
+                // pop-ups go through onCreateWindow, where ads (no tap) are dropped and real links open in this panel
+                setSupportMultipleWindows(true)
+                javaScriptCanOpenWindowsAutomatically = false
             }
             applyDark(web, false)
             web.addJavascriptInterface(InputBridge(), "XSpace")
             web.webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? =
+                    if (SpaceState.adBlock && AdFilter.isAd(r.url.host)) EMPTY_RESPONSE() else null
+
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                     val s = r.url.scheme ?: return true
+                    if (SpaceState.adBlock && r.isForMainFrame &&
+                        AdFilter.isHijack(Uri.parse(v.url ?: "").host, r.url.host, r.hasGesture(), Build.VERSION.SDK_INT >= 24 && r.isRedirect)) {
+                        SpaceState.notify("Đã chặn chuyển trang", r.url.host ?: "", Colors.GREY, 1.5)
+                        return true
+                    }
                     if (r.url.host == "accounts.google.com" && !googleHintShown) {
                         googleHintShown = true
                         SpaceState.notify("Đăng nhập Google", "Nếu Google chặn: bấm \"Mở bằng Chrome\" rồi xem qua màn hình điện thoại", Colors.AMBER, 6.0)
@@ -111,12 +182,28 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 override fun onPageFinished(v: WebView, url: String) {
                     SpaceState.config.screens.getOrNull(index)?.let { if (it.url != url) { it.url = url } }
                     v.evaluateJavascript(INPUT_HOOK_JS, null)
+                    v.evaluateJavascript(RESUME_JS, null)
                     if (SpaceState.darkWeb && Build.VERSION.SDK_INT < 29) v.evaluateJavascript(CSS_DARK_JS, null)
                 }
             }
             web.webChromeClient = object : WebChromeClient() {
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) { enterFullscreen(this@Panel, view, callback) }
                 override fun onHideCustomView() { exitFullscreen() }
+                /** window.open / target=_blank: ads (no tap) are dropped, real links open in this same panel */
+                override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, msg: android.os.Message): Boolean {
+                    if (SpaceState.adBlock && !isUserGesture) { SpaceState.notify("Đã chặn cửa sổ bật lên", "", Colors.GREY, 1.2); return false }
+                    val catcher = WebView(context)
+                    catcher.webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(cv: WebView, r: WebResourceRequest): Boolean {
+                            val host = r.url.host
+                            if (!(SpaceState.adBlock && AdFilter.isAd(host))) web.loadUrl(r.url.toString())
+                            cv.destroy(); return true
+                        }
+                    }
+                    (msg.obj as WebView.WebViewTransport).webView = catcher
+                    msg.sendToTarget()
+                    return true
+                }
             }
             web.setBackgroundColor(Color.BLACK)
             if (isMirror) {
@@ -142,6 +229,14 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
 
     /** Called by page JS when a text field gets / loses focus (binder thread -> main). */
     inner class InputBridge {
+        /** video position every few seconds (resume later) */
+        @JavascriptInterface fun videoPos(url: String, t: Double, dur: Double) {
+            synchronized(SpaceState.resume) { SpaceState.resume.save(url, t, dur) }
+            val now = SystemClock.uptimeMillis()
+            if (now - lastResumeSave > 30_000) { lastResumeSave = now; post { SpaceState.saveSettings() } }
+        }
+        @JavascriptInterface fun resumeAt(url: String): Double = synchronized(SpaceState.resume) { SpaceState.resume.get(url) }
+        @JavascriptInterface fun resumed(t: Double) { post { SpaceState.notify("Xem tiếp", "Từ ${ResumeStore.clock(t)}", Colors.CYAN, 3.0) } }
         @JavascriptInterface fun focus(kind: String, value: String) {
             post { if (SpaceState.remoteFocusSink?.invoke(value) != true) SpaceState.onInputFocus?.invoke(value) }
         }
@@ -293,9 +388,16 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     private fun frame(dt: Double) {
-        val w = width; val h = height
-        if (w == 0 || h == 0) return
         val st = SpaceState
+        val nowSbs = !onPhoneScreen && st.stereo3d && Stereo.isSbs(width, height)
+        if (nowSbs != sbs) {
+            sbs = nowSbs; invalidate()
+            st.notify(if (sbs) "Chế độ 3D" else "Chế độ 2D", if (sbs) "Màn hình có chiều sâu · phim 3D SBS xem toàn màn" else "Kính về hình thường", Colors.CYAN, 3.0)
+        }
+        val w = if (sbs) width / 2 else width; val h = height
+        if (w == 0 || h == 0) return
+        eyeW = w
+        focalPx = Projection.focalPx(h, st.config.fovVDeg)
         if (builtVersion != st.panelsVersion) rebuildPanels()
         if (st.pendingLoads.isNotEmpty()) {
             for ((i, url) in st.pendingLoads) panels.getOrNull(i)?.web?.loadUrl(url)
@@ -332,11 +434,12 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         // fullscreen video: fills the glasses screen (scaled), drifts with the cinema anchor
         if (st.speedLocked && fullView != null) exitFullscreen()   // no film while riding
         if (fullView != null) {
-            val cw = (w * st.cinemaScale).toInt(); val ch = (h * st.cinemaScale).toInt()
+            val k = if (sbs) 2 else 1                                     // SBS film spans both eyes
+            val cw = (w * k * st.cinemaScale).toInt(); val ch = (h * st.cinemaScale).toInt()
             val lp = cinema.layoutParams
             if (lp.width != cw || lp.height != ch) { lp.width = cw; lp.height = ch; cinema.layoutParams = lp }
             val pl = Projection.place(C, F, cfg.distanceM, 1.0, w, h, cfg.fovVDeg)
-            cinema.translationX = ((if (pl.visible) pl.cx else w / 2.0) - cw / 2.0).toFloat()
+            cinema.translationX = ((if (pl.visible) pl.cx * k else w * k / 2.0) - cw / 2.0).toFloat()
             cinema.translationY = ((if (pl.visible) pl.cy else h / 2.0) - ch / 2.0).toFloat()
         }
         // world-locked screens
@@ -499,6 +602,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     /** Place a view whose natural size is (vw x vh) so its centre lands on the projected point. */
     private fun layoutOn(v: View, pl: Placement, vw: Double, vh: Double) {
         if (!pl.visible) { hide(v); return }
+        eyeShift[v] = if (sbs) Stereo.shiftPx(pl.z, focalPx, convergeM = SpaceState.stereoConvergeM) else 0f
         if (v.visibility != VISIBLE) v.visibility = VISIBLE
         val s = (pl.widthPx / vw).toFloat()
         v.scaleX = s; v.scaleY = s
@@ -525,7 +629,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         if (f.visibility != VISIBLE) return null
         val inv = Matrix()
         if (!f.matrix.invert(inv)) return null
-        val pt = floatArrayOf(width / 2f - f.left, height / 2f - f.top)
+        val pt = floatArrayOf((if (eyeW > 0) eyeW else width) / 2f - f.left, height / 2f - f.top)
         inv.mapPoints(pt)
         pt[0] -= BORDER; pt[1] -= BORDER
         if (pt[0] < 0 || pt[1] < 0 || pt[0] > p.content.width || pt[1] > p.content.height) return null
@@ -604,6 +708,13 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             if(e.isContentEditable){document.execCommand('selectAll',false,null);document.execCommand('insertText',false,v);return;}
             var d=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e),'value');if(d&&d.set)d.set.call(e,v);else e.value=v;
             e.dispatchEvent(new Event('input',{bubbles:true}));})($js)""".trimIndent(), null)
+    }
+
+    fun setDesktopFocused(on: Boolean) {
+        val p = panels.getOrNull(SpaceState.focusedPanel)
+        if (p == null || p.isMirror) { SpaceState.notify("Bản máy tính", "Nhìn vào một màn web trước", Colors.AMBER, 2.5); return }
+        p.setDesktop(on)
+        SpaceState.notify(if (on) "Bản máy tính" else "Bản điện thoại", "Đang tải lại trang", Colors.CYAN, 2.0)
     }
 
     fun focusedWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)?.takeIf { !it.isMirror }?.web

@@ -4,13 +4,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.BatteryManager
 import android.view.View
+import vn.jiner.xrealspace.core.Geo
+import vn.jiner.xrealspace.core.LatLon
 import vn.jiner.xrealspace.core.MockRoute
+import vn.jiner.xrealspace.core.NavFmt
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,7 +44,7 @@ class MapPanelView(ctx: Context) : View(ctx) {
     private val done = paint(Colors.CYAN_DIM, stroke = 8f)
     private val todo = paint(Colors.CYAN, stroke = 9f)
     private val goal = paint(Colors.GREEN, stroke = 3f)
-    private val me = paint(0xFF003C5A.toInt())
+    private val mePaint = paint(0xFF003C5A.toInt())
     private val white = paint(Colors.WHITE)
     private val whiteStroke = paint(Colors.WHITE, stroke = 8f)
     private val ring = paint(Colors.STREET_MAIN, stroke = 2f)
@@ -51,9 +56,89 @@ class MapPanelView(ctx: Context) : View(ctx) {
     private val clip = Path()
     private val hm = SimpleDateFormat("HH:mm", Locale.US)
 
-    fun step(dt: Double) { route.update(dt); invalidate() }
+    init { Tiles.init(ctx.cacheDir); Tiles.onLoaded = { invalidate() } }
+
+    fun step(dt: Double) { if (Sensors.location == null) route.update(dt); invalidate() }
+
+    // OSM tiles are light; on the glasses black = transparent, so invert to a dark map and tint it slightly blue
+    private val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+            -0.85f, 0f, 0f, 0f, 235f,
+            0f, -0.85f, 0f, 0f, 240f,
+            0f, 0f, -0.80f, 0f, 255f,
+            0f, 0f, 0f, 0.92f, 0f)))
+    }
+    private val fAttr = paint(Colors.GREY, 14f).apply { textAlign = Paint.Align.CENTER }
 
     override fun onDraw(c: Canvas) {
+        val loc = Sensors.location
+        if (loc != null) { drawReal(c, LatLon(loc.latitude, loc.longitude), loc.speed.toDouble()); return }
+        drawMock(c)
+    }
+
+    /** Real GPS: dark OSM map, heading-up, route line, next-turn card. */
+    private fun drawReal(c: Canvas, me: LatLon, speedMps: Double) {
+        val r = MAP / 2f
+        c.drawCircle(W / 2f, r, r, bg)
+        c.drawRoundRect(RectF(0f, MAP + 4f, W.toFloat(), H.toFloat()), 22f, 22f, bg)
+        val zoom = if (speedMps > 9) 15 else if (speedMps > 4) 16 else 17
+        val (mx, my) = Geo.worldPx(me, zoom)
+        val cx = W / 2f; val cy = MAP * 0.62f
+        val heading = Sensors.headingDeg
+        c.save()
+        clip.reset(); clip.addCircle(W / 2f, r, r - 4, Path.Direction.CW)
+        c.clipPath(clip)
+        c.rotate((-heading).toFloat(), cx, cy)                    // heading-up
+        // tiles within the circle (radius covers the rotated square)
+        val reach = MAP.toDouble()
+        val tx0 = Geo.tileOf(mx - reach); val tx1 = Geo.tileOf(mx + reach)
+        val ty0 = Geo.tileOf(my - reach); val ty1 = Geo.tileOf(my + reach)
+        for (tx in tx0..tx1) for (ty in ty0..ty1) {
+            val bmp = Tiles.get(zoom, tx, ty) ?: continue
+            val left = (cx + tx * 256 - mx).toFloat(); val top = (cy + ty * 256 - my).toFloat()
+            c.drawBitmap(bmp, null, RectF(left, top, left + 256, top + 256), tilePaint)
+        }
+        val nav = Navigation.tracker
+        val ns = Navigation.state
+        if (nav != null) {
+            val path = Path(); var first = true
+            for (p in nav.route.points) {
+                val (px, py) = Geo.worldPx(p, zoom)
+                val x = (cx + px - mx).toFloat(); val y = (cy + py - my).toFloat()
+                if (first) { path.moveTo(x, y); first = false } else path.lineTo(x, y)
+            }
+            c.drawPath(path, todo)
+            val (gx, gy) = Geo.worldPx(nav.route.points.last(), zoom)
+            c.drawCircle((cx + gx - mx).toFloat(), (cy + gy - my).toFloat(), 10f, goal)
+        }
+        c.restore()
+        c.drawCircle(cx, cy, 26f, mePaint)
+        val arrow = Path().apply { moveTo(cx, cy - 18); lineTo(cx - 13, cy + 13); lineTo(cx, cy + 6); lineTo(cx + 13, cy + 13); close() }
+        c.drawPath(arrow, white)
+        c.drawCircle(W / 2f, r, r - 4, ring)
+        val nang = Math.toRadians(-heading)
+        c.drawText("N", (W / 2f + sin(nang) * (r - 22)).toFloat(), (r - cos(nang) * (r - 22)).toFloat() + 8, fN)
+        c.drawText("© OpenStreetMap", W / 2f, MAP - 2f, fAttr)
+
+        val y0 = MAP + 12f
+        if (nav != null && ns != null) {
+            val step = ns.next
+            turnIcon(c, 52f, y0 + 48, step?.arrow())
+            c.drawText(NavFmt.dist(ns.toNextM), 110f, y0 + 48, fBig)
+            c.drawText(step?.text() ?: "Đến ${nav.destName}", 112f, y0 + 90, fSmallCyan)
+            c.drawLine(20f, y0 + 108, W - 20f, y0 + 108, line)
+            val eta = hm.format(Date(System.currentTimeMillis() + (ns.remainS * 1000).toLong()))
+            c.drawText("${NavFmt.mins(ns.remainS)} phút · ${NavFmt.dist(ns.remainM)} · đến $eta", 20f, y0 + 146, fSmallGrey)
+        } else {
+            c.drawText("%.0f km/h".format(speedMps * 3.6), 24f, y0 + 52, fBig)
+            c.drawText(if (nav != null) "Đang tính đường…" else "Nói: \"chỉ đường tới …\"", 24f, y0 + 92, fSmallCyan)
+            c.drawLine(20f, y0 + 108, W - 20f, y0 + 108, line)
+            c.drawText("%.5f, %.5f".format(me.lat, me.lon), 20f, y0 + 146, fSmallGrey)
+        }
+    }
+
+    /** No GPS yet: the old demo route, so the map still shows something on a desk. */
+    private fun drawMock(c: Canvas) {
         val st = route.state()
         val r = MAP / 2f
         val ox = (W - MAP) / 2f
@@ -82,7 +167,7 @@ class MapPanelView(ctx: Context) : View(ctx) {
         val rest = listOf(pos) + route.route.subList(st.seg + 1, route.route.size)
         poly(rest, todo)
         val g = rest.last(); c.drawCircle(px(g.first, g.second), py(g.first, g.second), 10f, goal)
-        c.drawCircle(cx, cy, 26f, me)
+        c.drawCircle(cx, cy, 26f, mePaint)
         val arrow = Path().apply { moveTo(cx, cy - 18); lineTo(cx - 13, cy + 13); lineTo(cx, cy + 6); lineTo(cx + 13, cy + 13); close() }
         c.drawPath(arrow, white)
         c.restore()
@@ -104,6 +189,11 @@ class MapPanelView(ctx: Context) : View(ctx) {
     }
 
     private fun turnIcon(c: Canvas, x: Float, y: Float, turn: String?) {
+        if (turn == "uturn") {
+            c.drawLine(x + 14, y + 36, x + 14, y - 10, whiteStroke); c.drawLine(x - 14, y - 10, x - 14, y + 20, whiteStroke)
+            c.drawArc(RectF(x - 14, y - 24, x + 14, y + 4), 180f, 180f, false, whiteStroke)
+            c.drawPath(Path().apply { moveTo(x - 30, y + 14); lineTo(x + 2, y + 14); lineTo(x - 14, y + 34); close() }, white); return
+        }
         c.drawLine(x, y + 36, x, y - 6, whiteStroke)
         if (turn == null) {
             c.drawPath(Path().apply { moveTo(x - 18, y - 4); lineTo(x + 18, y - 4); lineTo(x, y - 30); close() }, white); return

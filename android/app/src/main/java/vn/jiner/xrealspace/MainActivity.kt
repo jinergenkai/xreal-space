@@ -621,12 +621,45 @@ class MainActivity : Activity(), TouchpadView.Host {
         lateinit var rideBtn: Button
         rideBtn = btn(rideLabel()) {
             SpaceState.rideSafety = !SpaceState.rideSafety; SpaceState.saveSettings()
-            if (SpaceState.rideSafety) Sensors.startSpeed() else Sensors.stopSpeed()
+            if (!SpaceState.rideSafety && SpaceState.speedLocked) { SpaceState.speedLocked = false }
             rideBtn.text = rideLabel()
         }
         col.addView(row(btn("Đọc thông báo") { PhoneNotifs.read() }, btn("Im lặng bật/tắt") { PhoneNotifs.mute(!PhoneNotifs.feed.doNotDisturb, null) }, rideBtn))
         col.addView(TextView(this).apply {
             text = "Nói: \"đọc thông báo\" · \"trả lời …\" · \"tắt thông báo Zalo\" · \"im lặng\". Tin nhắn hiện lên: gật = trả lời bằng giọng, lắc = bỏ qua. Trên ~15 km/h: ẩn màn, thông báo chỉ hiện tên app."
+            setTextColor(Colors.GREY); textSize = 12f
+        })
+
+        col.addView(label("Bản đồ & chỉ đường (GPS thật · OpenStreetMap)"))
+        val destField = EditText(this).apply {
+            hint = "Đi đến… (vd: Chợ Bến Thành)"; setSingleLine(); setTextColor(Color.WHITE); setHintTextColor(Colors.GREY)
+        }
+        col.addView(destField)
+        fun go(profile: String) {
+            val q = destField.text.toString().trim()
+            if (q.isEmpty()) { SpaceState.notify("Chỉ đường", "Nhập nơi muốn đến", Colors.AMBER, 2.5); return }
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 3); return
+            }
+            hideKeyboard(); Navigation.start(q, profile)
+        }
+        col.addView(row(btn("🏍 Xe") { go("car") }, btn("🚲 Đạp") { go("bike") }, btn("🚶 Đi bộ") { go("foot") }, btn("Dừng") { Navigation.stop() }))
+
+        col.addView(label("Xem phim trên web & 3D"))
+        fun adLabel() = "Chặn quảng cáo: ${if (SpaceState.adBlock) "BẬT" else "TẮT"}"
+        fun s3dLabel() = "3D (kính chế độ SBS): ${if (SpaceState.stereo3d) "BẬT" else "TẮT"}"
+        lateinit var adBtn: Button; lateinit var s3dBtn: Button
+        adBtn = btn(adLabel()) { SpaceState.adBlock = !SpaceState.adBlock; SpaceState.saveSettings(); adBtn.text = adLabel() }
+        s3dBtn = btn(s3dLabel()) { SpaceState.stereo3d = !SpaceState.stereo3d; SpaceState.saveSettings(); s3dBtn.text = s3dLabel() }
+        col.addView(row(adBtn, btn("Bản máy tính") { space?.setDesktopFocused(true) }, btn("Bản ĐT") { space?.setDesktopFocused(false) }))
+        col.addView(row(s3dBtn,
+            btn("Độ nổi +") { SpaceState.stereoConvergeM = (SpaceState.stereoConvergeM + 1).coerceAtMost(12.0); SpaceState.saveSettings()
+                SpaceState.notify("Độ nổi 3D", "Mặt phẳng phẳng: %.0f m".format(SpaceState.stereoConvergeM), Colors.CYAN, 2.0) },
+            btn("Độ nổi −") { SpaceState.stereoConvergeM = (SpaceState.stereoConvergeM - 1).coerceAtLeast(1.5); SpaceState.saveSettings()
+                SpaceState.notify("Độ nổi 3D", "Mặt phẳng phẳng: %.1f m".format(SpaceState.stereoConvergeM), Colors.CYAN, 2.0) }))
+        col.addView(TextView(this).apply {
+            text = "Phim 3D: mở video SBS → toàn màn hình → giữ nút Độ sáng + trên kính ~2 giây (nghe 1 tiếng tách). Phim thường thì giữ lại để về 2D. " +
+                "Trang phim tự nhớ chỗ đang xem (video nằm trong khung của trang khác thì không nhớ được)."
             setTextColor(Colors.GREY); textSize = 12f
         })
 
