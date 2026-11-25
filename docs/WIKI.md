@@ -378,6 +378,24 @@ Bản release cần **khoá ký riêng** để các bản sau cài đè được
 4. **Sao lưu file .jks** (USB / Drive riêng), xoá `secrets.txt`. Mất khoá = người dùng phải gỡ app mới cài được bản mới.
 Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài được). Khoá không bao giờ nằm trong repo (`.gitignore` chặn `*.jks`).
 
+### Rà soát 25/11/2026 (trước khi build thử trên máy)
+
+Đã sửa:
+- "mở Google Play" / "Play Store" bị hiểu là **phát nhạc** → chỉ câu "play" / "phát" đứng riêng mới là phát.
+- "dịch trang này" bị hiểu là **phụ đề dịch** → lệnh mới **Dịch trang** (mở trang qua Google Dịch, nói lại để về bản gốc).
+- "về trang chủ" không ra lệnh gì → về màn hình chính điện thoại.
+- Chặn chuyển trang (xem phim) có thể làm hỏng **đăng nhập Google/Facebook/Zalo** và thanh toán (MoMo, VNPay…) → cho qua các nhà cung cấp đăng nhập/thanh toán và chuyển trang trong 4 giây sau khi bấm.
+- Dịch vụ nền khai báo loại "vị trí" có thể bị Android 14 từ chối khi app không ở trước → có đường lùi, không crash.
+- Lưu vị trí xem phim đọc/ghi từ 2 luồng → khoá lại.
+- "dừng đọc" / "im lặng" giờ dừng luôn giọng đọc đang phát.
+- Thêm **bảng 72 câu lệnh mẫu** thành test: lệnh mới "cướp" lệnh cũ là CI báo đỏ.
+
+Biết nhưng chưa sửa (cần thử thật mới quyết):
+- Gật đầu khi không có thông báo sẽ **bật/tắt bản đồ** — nói chuyện mà gật nhiều có thể bật tắt lung tung. Nếu khó chịu: đổi sang chỉ gật khi có câu hỏi trên kính.
+- Phụ đề **qua micro** sẽ chép lại cả giọng đọc to của app (phụ đề **từ tiếng phim** thì không).
+- Đăng nhập kiểu cửa sổ bật lên (popup OAuth) mở trong cùng ô → vài trang có thể không quay về được; dùng "Mở bằng Chrome".
+- "mở Google Play" ra trang tìm kiếm Google; nói "mở app Google Play" để mở app.
+
 ## 9. Nợ kỹ thuật
 
 | # | Nợ | Mức | Trạng thái |

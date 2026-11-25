@@ -267,6 +267,8 @@ object VoiceCommands {
         /** software brightness of the glasses image, ±0.1 steps */
         data class Brightness(val delta: Float) : Cmd()
         object GlassesInfo : Cmd()
+        /** the page you look at, machine-translated to Vietnamese (Google Translate proxy, no key) */
+        object TranslatePage : Cmd()
         /** play / pause / next… on the video you're watching, else on the phone's music app; seek in seconds */
         data class Media(val action: MediaAction, val seconds: Int = 0) : Cmd()
         /** read things out loud (TTS): on / off / only while riding */
@@ -422,6 +424,9 @@ object VoiceCommands {
         if (has("bo qua huong dan", "tat huong dan", "skip tutorial")) return Cmd.TutorialCmd(false)
         if (has("huong dan su dung", "xem huong dan", "huong dan", "tutorial")) return Cmd.TutorialCmd(true)
 
+        // translate the web page (before the captions rules, where "dịch" means live subtitles)
+        if (has("dich trang", "dich web", "dich trang nay", "dich trang web", "translate page", "translate this page")) return Cmd.TranslatePage
+
         // glasses (replaces Nebula's settings)
         if (has("sang hon", "tang do sang", "sang len", "brighter")) return Cmd.Brightness(0.1f)
         if (has("toi hon", "giam do sang", "dim", "darker")) return Cmd.Brightness(-0.1f)
@@ -440,7 +445,8 @@ object VoiceCommands {
             return Cmd.Media(MediaAction.SEEK, (if (back) -1 else 1) * n * unit)
         }
         if (has("tam dung", "dung phim", "dung nhac", "dung video", "pause")) return Cmd.Media(MediaAction.PAUSE)
-        if (has("phat tiep", "tiep tuc phat", "xem tiep", "nghe tiep", "phat nhac", "play", "resume")) return Cmd.Media(MediaAction.PLAY)
+        // bare "play" only as a whole command: "mở Google Play" / "Play Store" must stay app / site commands
+        if (has("phat tiep", "tiep tuc phat", "xem tiep", "nghe tiep", "phat nhac", "resume") || t == "play" || t == "phat") return Cmd.Media(MediaAction.PLAY)
         if (has("bai tiep", "bai sau", "tap tiep", "tap sau", "next track", "next song", "next episode")) return Cmd.Media(MediaAction.NEXT)
         if (has("bai truoc", "tap truoc", "previous track", "previous song")) return Cmd.Media(MediaAction.PREV)
 
@@ -497,7 +503,7 @@ object VoiceCommands {
         if (has("teleprompter", "prompter", "nhac chu", "bat dau doc", "kich ban")) return Cmd.Prompter(true)
         // phone navigation (works on the mirrored app via Accessibility)
         if (has("quay lai", "tro lai", "go back")) return Cmd.Back
-        if (has("man hinh chinh", "go home", "ve home")) return Cmd.Home
+        if (has("man hinh chinh", "go home", "ve home", "ve trang chu dien thoai") || t == "ve trang chu") return Cmd.Home
         // slots
         if (slot != null && has("xoa", "dong", "tat", "bo", "clear", "close", "remove")) return Cmd.ClearSlot(slot)
         // "mở app Zalo ô 3" / "ứng dụng Excel ô 2": an Android app into a slot (needs the word app / ứng dụng,

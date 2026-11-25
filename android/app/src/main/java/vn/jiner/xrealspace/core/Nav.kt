@@ -242,8 +242,19 @@ object AdFilter {
      * A page trying to send the main frame to ANOTHER site with no user tap (classic ad redirect on film sites).
      * Server redirects (login flows) are allowed.
      */
-    fun isHijack(fromHost: String?, toHost: String?, hasGesture: Boolean, isRedirect: Boolean): Boolean =
-        !hasGesture && !isRedirect && fromHost != null && toHost != null && site(fromHost) != site(toHost)
+    /** sign-in / payment providers: script redirects to and from them are normal, never "ads" */
+    val TRUSTED_FLOWS = listOf("google.com", "accounts.google.com", "facebook.com", "apple.com", "microsoftonline.com", "live.com",
+        "zalo.me", "id.zalo.me", "github.com", "momo.vn", "vnpay.vn", "zalopay.vn", "paypal.com")
+
+    private fun trusted(host: String) = TRUSTED_FLOWS.any { host == it || host.endsWith(".$it") }
+
+    /**
+     * @param msSinceTap time since the user's last tap in this page (a script redirect right after a tap, e.g. after
+     *   "Đăng nhập", is the user's own action)
+     */
+    fun isHijack(fromHost: String?, toHost: String?, hasGesture: Boolean, isRedirect: Boolean, msSinceTap: Long = Long.MAX_VALUE): Boolean =
+        !hasGesture && !isRedirect && msSinceTap > 4000 && fromHost != null && toHost != null &&
+            site(fromHost) != site(toHost) && !trusted(fromHost.lowercase()) && !trusted(toHost.lowercase())
 }
 
 /** "Continue watching": remembers where each video stopped. */

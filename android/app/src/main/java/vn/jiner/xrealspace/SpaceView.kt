@@ -124,6 +124,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         val frame = FrameLayout(context)
         val web = WebView(context)
         var mobileUa = ""
+        /** last time we sent a tap into this page (script redirects shortly after are the user's doing) */
+        var lastTap = 0L
         var desktop = false
 
         /** desktop layout (many film / office sites are cramped in their mobile version) */
@@ -184,7 +186,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
                     val s = r.url.scheme ?: return true
                     if (SpaceState.adBlock && r.isForMainFrame &&
-                        AdFilter.isHijack(Uri.parse(v.url ?: "").host, r.url.host, r.hasGesture(), Build.VERSION.SDK_INT >= 24 && r.isRedirect)) {
+                        AdFilter.isHijack(Uri.parse(v.url ?: "").host, r.url.host, r.hasGesture(), Build.VERSION.SDK_INT >= 24 && r.isRedirect,
+                            SystemClock.uptimeMillis() - lastTap)) {
                         SpaceState.notify("Đã chặn chuyển trang", r.url.host ?: "", Colors.GREY, 1.5)
                         return true
                     }
@@ -429,7 +432,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     private fun rebuildPanels() {
-        panels.forEach { removeView(it.frame); it.doc?.close(); AppDisplays.release(it.appDisplay); it.web.destroy() }
+        panels.forEach { removeView(it.frame); eyeShift.remove(it.frame); it.doc?.close(); AppDisplays.release(it.appDisplay); it.web.destroy() }
         panels.clear()
         SpaceState.config.screens.indices.forEach { i ->
             val p = Panel(i)
@@ -768,7 +771,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
 
     private var fullTouch: View? = null
 
-    private fun send(p: Panel, action: Int, x: Float, y: Float) = sendTo(p.web, action, x, y)
+    private fun send(p: Panel, action: Int, x: Float, y: Float) { if (action == MotionEvent.ACTION_UP) p.lastTap = SystemClock.uptimeMillis(); sendTo(p.web, action, x, y) }
 
     private fun sendTo(v: View, action: Int, x: Float, y: Float) {
         val ev = MotionEvent.obtain(touchDownTime, SystemClock.uptimeMillis(), action, x, y, 0)
@@ -848,6 +851,16 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             "if(!b)return 'none';if(a=='PLAY')b.play();else if(a=='PAUSE')b.pause();" +
             "else if(a=='SEEK')b.currentTime=Math.max(0,b.currentTime+s);else return 'unsupported';return 'ok';})('${action.name}',$seconds)"
         w.evaluateJavascript(js) { r -> cb(r?.trim('"') ?: "none") }
+    }
+
+    /** reopen the page you look at through Google Translate (→ Vietnamese); again = back to the original */
+    fun translateFocused() {
+        val w = focusedWeb() ?: run { SpaceState.notify("Dịch trang", "Nhìn vào một trang web trước", Colors.AMBER, 2.5); return }
+        val url = w.url ?: return
+        val orig = Uri.parse(url).getQueryParameter("u")
+        if (url.contains("translate.google.com/translate") && orig != null) { w.loadUrl(orig); return }
+        w.loadUrl("https://translate.google.com/translate?sl=auto&tl=vi&u=" + Uri.encode(url))
+        SpaceState.notify("Dịch trang", "Sang tiếng Việt (nói lại để xem bản gốc)", Colors.CYAN, 2.5)
     }
 
     fun setDesktopFocused(on: Boolean) {

@@ -486,6 +486,10 @@ class CoreTest {
         assertFalse(AdFilter.isHijack("phim.example.com", "cdn.example.com", false, false))       // same site
         assertFalse(AdFilter.isHijack("phim.example.com", "accounts.google.com", false, true))    // server redirect
         assertFalse(AdFilter.isHijack("phim.example.com", "other.com", true, false))              // user tapped
+        assertFalse(AdFilter.isHijack("shop.vn", "accounts.google.com", false, false))           // sign-in by script
+        assertFalse(AdFilter.isHijack("accounts.google.com", "shop.vn", false, false))           // back from sign-in
+        assertFalse(AdFilter.isHijack("phim.example.com", "other.com", false, false, msSinceTap = 1500))  // right after a tap
+        assertTrue(AdFilter.isHijack("phim.example.com", "other.com", false, false, msSinceTap = 9000))
         assertEquals("bbc.co.uk", AdFilter.site("www.bbc.co.uk"))
         val r = ResumeStore()
         r.save("https://phim.x/ep1?utm_source=fb", 754.0, 2700.0); assertEquals(754.0, r.get("https://phim.x/ep1"), 1e-9)
@@ -624,5 +628,85 @@ class CoreTest {
         assertEquals(VoiceCommands.Cmd.LaunchApp("excel", 2), VoiceCommands.parse("mở ứng dụng Excel ô số 2"))
         assertEquals(VoiceCommands.Cmd.LaunchApp("zalo"), VoiceCommands.parse("mở Zalo"))                       // no slot: as before
         assertEquals(VoiceCommands.Cmd.Place(3, "https://m.youtube.com", null), VoiceCommands.parse("YouTube ô 3"))  // website stays a website
+    }
+
+    /** Regression table: one real phrase per feature. A new rule that steals an old phrase fails here. */
+    @Test fun voicePhraseTable() {
+        val cases = listOf(
+            "về giữa" to "Recenter",
+            "mở youtube" to "Open",
+            "youtube ô 3" to "Place",
+            "tạm dừng" to "Media",
+            "dừng phim" to "Media",
+            "phát tiếp" to "Media",
+            "xem tiếp" to "Media",
+            "play" to "Media",
+            "tua 30 giây" to "Media",
+            "lùi 10 giây" to "Media",
+            "bài tiếp" to "Media",
+            "bài trước" to "Media",
+            "dừng chỉ đường" to "StopNav",
+            "chỉ đường tới bến thành" to "Navigate",
+            "đi bộ đến công viên" to "Navigate",
+            "về trang chủ" to "Home",
+            "quay lại" to "Back",
+            "trang sau" to "DocPage",
+            "trang trước" to "DocPage",
+            "trang 5" to "DocPage",
+            "mở tài liệu" to "OpenDoc",
+            "đọc sách" to "OpenDoc",
+            "dừng đọc" to "Prompter",
+            "nhắc chữ" to "Prompter",
+            "đọc thông báo" to "ReadNotifs",
+            "thông báo" to "ReadNotifs",
+            "trả lời ok nhé" to "Reply",
+            "tắt thông báo zalo" to "MuteNotifs",
+            "im lặng" to "MuteNotifs",
+            "bật thông báo" to "MuteNotifs",
+            "bật đọc to" to "Speak",
+            "tắt đọc to" to "Speak",
+            "phụ đề" to "Captions",
+            "phụ đề phim" to "Captions",
+            "dịch phim" to "Captions",
+            "tắt phụ đề" to "Captions",
+            "dịch tiếng anh" to "Captions",
+            "pomodoro" to "Timer",
+            "hẹn giờ 10 phút" to "Timer",
+            "nghỉ 5 phút" to "Timer",
+            "dừng hẹn giờ" to "TimerStop",
+            "ghi chú mua sữa" to "Note",
+            "đọc ghi chú" to "ReadNotes",
+            "lịch hôm nay" to "Agenda",
+            "thời tiết" to "WeatherNow",
+            "tìm thời tiết sài gòn ô 6" to "Place",
+            "xem hướng dẫn" to "TutorialCmd",
+            "bỏ qua hướng dẫn" to "TutorialCmd",
+            "sáng hơn" to "Brightness",
+            "tối hơn" to "Brightness",
+            "cài đặt kính" to "GlassesInfo",
+            "chặn quảng cáo" to "AdBlock",
+            "tắt chặn quảng cáo" to "AdBlock",
+            "bản máy tính" to "DesktopSite",
+            "mở app zalo ô 3" to "LaunchApp",
+            "mở zalo" to "LaunchApp",
+            "xoá ô 7" to "ClearSlot",
+            "hiện lưới" to "ShowGrid",
+            "màn hình điện thoại" to "Mirror",
+            "tắt màn hình điện thoại" to "MirrorOff",
+            "bản đồ" to "Map",
+            "tắt bản đồ" to "Map",
+            "xa hơn" to "Farther",
+            "gần hơn" to "Closer",
+            "không gian làm việc" to "Workspace",
+            "lưu không gian code" to "SaveWorkspace",
+            "chế độ xem phim" to "Workspace",
+            "tóm tắt" to "Summarize",
+            "thời tiết hôm nay" to "WeatherNow",
+            "có mưa không" to "WeatherNow",
+            "đi về nhà" to "Navigate",
+            "dịch trang này" to "TranslatePage",
+        )
+        val wrong = cases.mapNotNull { (p, want) -> VoiceCommands.parse(p).let { c -> if (c::class.simpleName != want) "$p -> $c (want $want)" else null } }
+        assertTrue(wrong.joinToString("\n"), wrong.isEmpty())
     }
 }

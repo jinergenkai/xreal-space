@@ -146,7 +146,14 @@ class GlassesService : Service() {
             // GPS speed keeps working while another app is in front (Android 10+ needs the location type for that)
             if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED)
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            startForeground(NOTIF_ID, n, types)
+            // Android 14 refuses some types when the app is not in front (e.g. location "while in use"):
+            // fall back to fewer types instead of crashing the service
+            try { startForeground(NOTIF_ID, n, types) }
+            catch (e: Exception) {
+                SpaceState.log("startForeground($types) refused: $e")
+                val basic = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or (if (mirror) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0)
+                try { startForeground(NOTIF_ID, n, basic) } catch (e2: Exception) { SpaceState.log("startForeground basic refused: $e2") }
+            }
         } else startForeground(NOTIF_ID, n)
     }
 

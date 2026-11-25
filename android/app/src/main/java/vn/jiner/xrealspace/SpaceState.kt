@@ -403,13 +403,14 @@ object SpaceState {
             VoiceCommands.Cmd.WeatherNow -> Utilities.showWeather()
             is VoiceCommands.Cmd.Brightness -> setBrightness(glassesBrightness + cmd.delta)
             VoiceCommands.Cmd.GlassesInfo -> showCard("Kính", GlassesDisplay.describe(), 12.0)
+            VoiceCommands.Cmd.TranslatePage -> SpaceHost.space?.translateFocused() ?: notify("Dịch trang", "Nhìn vào một trang web trước", Colors.AMBER, 2.5)
             is VoiceCommands.Cmd.TutorialCmd -> if (cmd.start) startTutorial() else skipTutorial()
             is VoiceCommands.Cmd.DocPage -> if (SpaceHost.space?.docPage(cmd.step, cmd.page) != true) notify("Tài liệu", "Chưa mở tài liệu nào — nói \"mở tài liệu\"", Colors.AMBER, 3.0)
             is VoiceCommands.Cmd.Speak -> setSpeak(cmd.mode)
             is VoiceCommands.Cmd.AdBlock -> { adBlock = cmd.on; saveSettings(); notify("Chặn quảng cáo", if (cmd.on) "bật" else "tắt", Colors.CYAN, 2.0) }
             is VoiceCommands.Cmd.DesktopSite -> controller?.setDesktopSite(cmd.on)
             is VoiceCommands.Cmd.Reply -> controller?.replyNotif(cmd.text, null)
-            is VoiceCommands.Cmd.MuteNotifs -> PhoneNotifs.mute(cmd.on, cmd.app)
+            is VoiceCommands.Cmd.MuteNotifs -> { if (cmd.on) Speaker.stop(); PhoneNotifs.mute(cmd.on, cmd.app) }   // "im lặng" also hushes a read-out
             VoiceCommands.Cmd.Grab -> toggleGrab()
             VoiceCommands.Cmd.Summarize -> controller?.summarizeFocused()
             VoiceCommands.Cmd.ShowGrid -> showGrid(8.0)
@@ -419,7 +420,7 @@ object SpaceState {
             is VoiceCommands.Cmd.Mirror -> controller?.mirror(cmd.slot)
             VoiceCommands.Cmd.MirrorOff -> controller?.mirrorOff()
             is VoiceCommands.Cmd.Captions -> controller?.setCaptions(cmd.mode, cmd.media)
-            is VoiceCommands.Cmd.Prompter -> controller?.setPrompter(cmd.on)
+            is VoiceCommands.Cmd.Prompter -> { if (cmd.on == false) Speaker.stop(); controller?.setPrompter(cmd.on) }   // "dừng đọc" stops speech too
             VoiceCommands.Cmd.Back -> {
                 val onMirror = config.screens.getOrNull(focusedPanel)?.url == Assistant.MIRROR_URL
                 if (onMirror) { if (controller?.phoneBack() != true) notify("Quay lại", "Cần bật Trợ năng cho XREAL Space", Colors.AMBER, 3.0) }
@@ -479,7 +480,7 @@ object SpaceState {
             .put("glassesBrightness", glassesBrightness.toDouble()).put("glassesModeHz", glassesModeHz)
             .put("adBlock", adBlock).put("darkDocs", darkDocs).put("speakMode", speakMode.name)
             .put("stereo3d", stereo3d).put("stereoConvergeM", stereoConvergeM)
-            .put("resume", org.json.JSONObject().apply { resume.entries().forEach { (k, v) -> put(k, v) } })
+            .put("resume", org.json.JSONObject().apply { synchronized(resume) { HashMap(resume.entries()) }.forEach { (k, v) -> put(k, v) } })
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
             .put("jevBaseUrl", jevBaseUrl).put("jevModel", jevModel).put("jevKey", jevKey)
             .put("llmProvider", llmProvider).put("llmBaseUrl", llmBaseUrl).put("llmModel", llmModel).put("llmKey", llmKey)
