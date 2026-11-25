@@ -872,6 +872,10 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         SpaceState.notify(if (on) "Bản máy tính" else "Bản điện thoại", "Đang tải lại trang", Colors.CYAN, 2.0)
     }
 
+    /** the web page D-pad browsing acts on: the fullscreen video's page, else the focused plain web panel */
+    fun pageWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)
+        ?.takeIf { !it.isMirror && it.appPkg == null && it.doc == null }?.web
+
     fun focusedWeb(): WebView? = fullOwner?.web ?: panels.getOrNull(SpaceState.focusedPanel)?.takeIf { !it.isMirror }?.web
         ?: panels.firstOrNull { !it.isMirror }?.web
 

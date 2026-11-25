@@ -432,6 +432,37 @@ class MainActivity : Activity(), TouchpadView.Host {
         val st = SpaceState
         // Beam / any D-pad remote while the space is on this screen: arrows turn the view, centre clicks at the dot
         if (phoneSpace != null && st.onBeam && Assistant.prompter == null) {
+            val sp = space
+            val web = sp?.pageWeb()
+            // fullscreen video: ◀▶ seek 10 s, centre play/pause
+            if (sp?.inFullscreen == true && web != null) when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { PageNav.seek(web, -10); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { PageNav.seek(web, 10); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> { if (event.repeatCount == 0) PageNav.playPause(web); return true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> return true
+            }
+            // inside a page: arrows jump between links/buttons (or scroll), centre clicks, Back = page back, hold Back = leave
+            if (st.pageMode && web != null) when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { PageNav.move(web, -1, 0); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { PageNav.move(web, 1, 0); return true }
+                KeyEvent.KEYCODE_DPAD_UP -> { PageNav.move(web, 0, -1); return true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> { PageNav.move(web, 0, 1); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_BUTTON_A -> {
+                    if (event.repeatCount == 0) PageNav.click(web) else if (event.repeatCount == 4) pushToTalk()
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.repeatCount == 0) event.startTracking()
+                    else if (event.repeatCount == 3) { backLong = true; leavePageMode() }
+                    return true
+                }
+            }
+            if (st.pageMode && web == null) st.pageMode = false
+            // centre on a web screen = start browsing it
+            if (!st.pageMode && web != null && event.repeatCount == 0 &&
+                (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A)) {
+                enterPageMode(); return true
+            }
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { st.look(25.0, 0.0); return true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { st.look(-25.0, 0.0); return true }
@@ -499,8 +530,32 @@ class MainActivity : Activity(), TouchpadView.Host {
             .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress ?: "?"
     } catch (_: Exception) { "?" }
 
+    private var backLong = false
+
+    private fun enterPageMode() {
+        val st = SpaceState
+        st.pageMode = true
+        // turn the view straight onto that screen so it sits in front of you
+        st.config.screens.getOrNull(st.focusedPanel)?.let { st.lookYaw = it.yaw; st.lookPitch = it.pitch }
+        space?.pageWeb()?.let { PageNav.move(it, 0, 0) }
+        st.notify("Duyệt trang", "◀▶▲▼ chọn link/nút · giữa = bấm · Back = trang trước · giữ Back = thoát", Colors.CYAN, 5.0)
+    }
+
+    private fun leavePageMode() {
+        SpaceState.pageMode = false
+        space?.pageWeb()?.let { PageNav.clear(it) }
+        SpaceState.notify("Thoát duyệt trang", "◀▶▲▼ lại xoay nhìn", Colors.GREY, 2.0)
+    }
+
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (crashScreen) return super.onKeyUp(keyCode, event)
+        if (keyCode == KeyEvent.KEYCODE_BACK && SpaceState.pageMode && phoneSpace != null) {
+            if (backLong) { backLong = false; return true }
+            if (space?.inFullscreen == true) { space?.exitFullscreen(); return true }
+            val web = space?.pageWeb()
+            if (web != null && web.canGoBack()) web.goBack() else leavePageMode()
+            return true
+        }
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             if (!volLongPressed && RemoteLink.isRemote) RemoteLink.send(RemoteProtocol.Msg.Key("click"))
             else if (!volLongPressed && space?.clickAtGaze() != true) SpaceState.notify("Click", "Không có màn nào dưới chấm ngắm", Colors.AMBER, 1.0)

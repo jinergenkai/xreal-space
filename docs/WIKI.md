@@ -391,6 +391,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - Beam tự đưa màn hình của nó lên kính và tự làm 3DoF; nó giữ USB/IMU của kính. App phát hiện Beam (Build.MODEL/MANUFACTURER) → **không gian tự mở toàn màn hình**, Beam chiếu nó lên kính.
 - Điều khiển: ◀▶ xoay nhìn 25°, ▲▼ ngẩng/cúi 15°, **nút giữa** = bấm vào ô ở chấm giữa (bấm vào chỗ trống = hiện lưới ô), **giữ nút giữa** = nói lệnh, **Back** = về menu (nút "Xem trên màn hình này" để vào lại).
 - Mục Kiểm tra: kính USB / màn hình kính / IMU / overlay / Accessibility đánh dấu "Beam tự lo".
+- **Duyệt web bằng D-pad (0.12.0)**: nút giữa trên một ô web = vào "Duyệt trang" (view tự quay thẳng vào ô đó). ◀▶▲▼ nhảy tới link/nút gần nhất theo hướng (viền xanh), hết thì cuộn trang; giữa = bấm; Back = trang trước; giữ Back = thoát về xoay nhìn. Video toàn màn hình: ◀▶ tua ±10 s, giữa = dừng/phát. Làm bằng JS trong trang (PageNav.kt), nên trang dùng iframe khác domain thì không chọn được nút bên trong iframe — dùng giữa để dừng/phát video.
 - Accessibility trên Beam báo "app đang che yêu cầu" (tapjacking protection: có lớp phủ nằm trên trang Cài đặt, nhiều khả năng là lớp hiển thị của chính Beam). Trên Beam không cần Accessibility (nó chỉ dùng cho app điện thoại được mirror). Nếu sau này cần: `adb shell settings put secure enabled_accessibility_services vn.jiner.xrealspace/.ControlService` (chưa thử).
 - TTS: Beam không có engine đọc chữ → muốn đọc to phải cài một engine (vd. Google TTS APK) — chưa thử.
 

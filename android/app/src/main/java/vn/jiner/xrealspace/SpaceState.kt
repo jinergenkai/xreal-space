@@ -217,6 +217,8 @@ object SpaceState {
         android.os.Build.MANUFACTURER.let { it.contains("xreal", true) || it.contains("nreal", true) }
 
     /** manual look offset (deg) added on top of the head tracking: D-pad on the Beam, keys elsewhere */
+    /** D-pad is browsing inside the focused web page (Beam) instead of turning the view */
+    @Volatile var pageMode = false
     @Volatile var lookYaw = 0.0
     @Volatile var lookPitch = 0.0
     fun look(dYaw: Double, dPitch: Double) {
