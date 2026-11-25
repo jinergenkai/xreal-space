@@ -9,6 +9,7 @@ import vn.jiner.xrealspace.core.LatLon
 import vn.jiner.xrealspace.core.NavFmt
 import vn.jiner.xrealspace.core.NavTracker
 import vn.jiner.xrealspace.core.OsmApi
+import vn.jiner.xrealspace.core.Speech
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -74,6 +75,7 @@ object Navigation {
             tracker = NavTracker(r, name); state = null; offSince = 0
             SpaceState.showMap = true
             SpaceState.notify("Chỉ đường tới $name", "${NavFmt.dist(r.distanceM)} · khoảng ${NavFmt.mins(r.durationS)} phút", Colors.GREEN, 5.0)
+            Speaker.say("Bắt đầu chỉ đường tới $name. ${Speech.distance(r.distanceM)}, khoảng ${NavFmt.mins(r.durationS)} phút", flush = true)
             SpaceState.log("nav: ${r.points.size} pts, ${r.steps.size} steps to $name")
         }
     }
@@ -89,12 +91,13 @@ object Navigation {
         val t = tracker ?: return
         val p = LatLon(loc.latitude, loc.longitude)
         val s = t.update(p); state = s
-        if (s.arrived) { SpaceState.notify("Đã đến", t.destName, Colors.GREEN, 6.0); stop(quiet = true); return }
+        if (s.arrived) { SpaceState.notify("Đã đến", t.destName, Colors.GREEN, 6.0); Speaker.say("Đã đến ${t.destName}", flush = true); stop(quiet = true); return }
         // announce each turn once, ~150 m before (or right away if the step is shorter)
         val next = s.next
         if (next != null && next !== lastSpokenStep && s.toNextM < 150) {
             lastSpokenStep = next
             SpaceState.notify("${NavFmt.dist(s.toNextM)} nữa", next.text(), Colors.CYAN, 5.0)
+            Speaker.say(Speech.turn(next, s.toNextM), flush = true)
         }
         // off the route: re-route after 10 s, rate-limited
         val now = System.currentTimeMillis()
@@ -104,6 +107,7 @@ object Navigation {
             if (d != null && now - offSince > 10_000 && now - lastRouteMs > 20_000) {
                 offSince = 0
                 SpaceState.notify("Chỉ đường", "Bạn đi lệch — đang tìm đường mới", Colors.AMBER, 3.0)
+                Speaker.say("Đang tìm đường mới")
                 io.execute { route(p, d, t.destName) }
             }
         } else offSince = 0

@@ -176,6 +176,8 @@ Các hàm:
 - back {} / home {}   quay lại / về màn hình chính của điện thoại
 - navigate {dest:string, profile:"car"|"bike"|"foot"}   chỉ đường thật (GPS) tới địa điểm
 - stop_navigation {}   dừng chỉ đường
+- media {action:"play"|"pause"|"next"|"prev"|"seek", seconds:int}   điều khiển video đang xem / nhạc trên điện thoại (seek: âm = lùi)
+- speak {mode:"off"|"riding"|"always"}   đọc to thông báo và chỉ đường
 - ad_block {on:bool}   chặn quảng cáo / cửa sổ bật lên trên trang web (xem phim)
 - desktop_site {on:bool}   trang web bản máy tính (true) hoặc bản điện thoại (false)
 - read_notifications {}   đọc các thông báo mới của điện thoại
@@ -245,6 +247,10 @@ Nhiều bước thì trả nhiều action theo thứ tự. Không chắc thì d�
                     VoiceCommands.Cmd.Navigate(it, (m["profile"] as? String)?.takeIf { p -> p in setOf("car", "bike", "foot") } ?: "car")
                 }
                 "stop_navigation" -> VoiceCommands.Cmd.StopNav
+                "media" -> runCatching { MediaAction.valueOf((m["action"] as String).uppercase()) }.getOrNull()?.let {
+                    VoiceCommands.Cmd.Media(it, (m["seconds"] as? Number)?.toInt() ?: if (it == MediaAction.SEEK) 10 else 0)
+                }
+                "speak" -> runCatching { SpeakMode.valueOf((m["mode"] as String).uppercase()) }.getOrNull()?.let { VoiceCommands.Cmd.Speak(it) }
                 "ad_block" -> VoiceCommands.Cmd.AdBlock(m["on"] != false)
                 "desktop_site" -> VoiceCommands.Cmd.DesktopSite(m["on"] != false)
                 "reply" -> (m["text"] as? String)?.takeIf { it.isNotBlank() }?.let { VoiceCommands.Cmd.Reply(it) }

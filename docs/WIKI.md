@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.7.0
+Cập nhật: 25/11/2026 · bản 0.8.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -82,6 +82,9 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Phim web | Chặn quảng cáo (danh sách tên miền), chặn cửa sổ bật lên và chuyển trang lạ không do bấm | Chờ test | 0.7 |
 | Phim web | Bản máy tính / bản điện thoại cho trang đang nhìn; tự nhớ chỗ đang xem và xem tiếp | Chờ test | 0.7 |
 | 3D | Kính ở chế độ SBS (giữ Độ sáng+): mỗi mắt một hình, màn hình gần thì nổi ra; phim 3D SBS trải đủ hai mắt; chỉnh độ nổi | Chờ test (thử nghiệm) | 0.7 |
+| Giọng nói | Đọc to thông báo và chỉ đường qua tai nghe (TTS tiếng Việt có sẵn trong máy), nhạc tự nhỏ lại khi đọc; chế độ Tắt / Khi đi xe / Luôn | Chờ test | 0.8 |
+| Điều khiển phát | "tạm dừng", "phát tiếp", "tua 30 giây", "lùi 10 giây", "bài tiếp/trước": video trên kính, không có thì app nhạc của điện thoại | Chờ test | 0.8 |
+| Phát hành | APK bản release (R8 thu gọn) trên CI; ký bằng khoá riêng khi có secret | Đã build | 0.8 |
 | An toàn | Đi nhanh hơn ~15 km/h (GPS): ẩn màn hình, thoát rạp phim, thông báo chỉ hiện tên app, không cho trả lời | Chờ test | 0.6 |
 | Chưa | Bản đồ GPS thật, 3D stereo SBS, méo phối cảnh khi nhìn xiên | Chưa | — |
 | Chưa | Backend giữ key Jev/LLM, gói trả phí | Chưa | — |
@@ -143,6 +146,10 @@ Trang tự nhớ chỗ đang xem; mở lại là xem tiếp (chỉ với video n
 
 **3D (0.7, thử nghiệm):** giữ nút **Độ sáng +** trên kính ~2 giây → kính chuyển 3840×1080 (SBS), app tự nhận và vẽ mỗi mắt một hình: các màn ở gần nổi ra trước.
 Phim 3D SBS: bật toàn màn hình là trải đủ hai mắt. Phim thường: giữ nút lần nữa để về 2D. Mỏi mắt → "Độ nổi +" (giảm độ nổi) hoặc tắt 3D trong app.
+
+**Đọc to & điều khiển phát (0.8):** mặc định đọc to **khi đi xe** (đang đi nhanh hoặc đang chỉ đường): đọc tin nhắn, báo rẽ. Nút "Đọc to" trong app đổi Tắt / Khi đi xe / Luôn, hoặc nói "bật đọc to" / "tắt đọc to".
+Nếu máy báo chưa có giọng tiếng Việt: cài "Speech Services by Google" → Cài đặt → tải giọng tiếng Việt.
+Nói "tạm dừng", "phát tiếp", "tua 30 giây", "lùi 10 giây", "tua lại 2 phút", "bài tiếp", "bài trước". Đang nhìn một trang có video thì điều khiển video đó, không thì điều khiển app nhạc/video đang phát trên điện thoại (cần quyền Đọc thông báo ĐT).
 
 **An toàn khi đi xe:** cấp quyền **Vị trí** (chỉ đọc tốc độ, không lưu, không gửi). Khi đang cắm kính mà đi nhanh hơn ~15 km/h trong 3 giây:
 màn hình ẩn, video thoát toàn màn hình, thông báo chỉ hiện tên app. Chậm dưới ~8 km/h trong 6 giây thì hiện lại. Tắt được ở mục Thông báo & an toàn.
@@ -258,6 +265,9 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Bản đồ: ra ngoài trời → ô bản đồ hiện bản đồ thật, mũi tên theo hướng đi; "chỉ đường tới <chỗ gần>" → đường xanh, báo rẽ trước ~150 m, đi lệch → tìm đường mới
 - [ ] Phim: mở 1 trang phim nhiều quảng cáo → ít pop-up / chuyển trang; xem 5 phút, đóng, mở lại → "Xem tiếp từ …"; "bản máy tính" đổi giao diện
 - [ ] 3D: giữ Độ sáng+ 2 giây → app báo "Chế độ 3D", màn hình có chiều sâu, không bị nhân đôi/lệch khó chịu; mở video 3D SBS toàn màn → nổi khối. Nếu mắt nhòe/lệch: thử Độ nổi ±, ghi lại giá trị dễ chịu
+- [ ] Đọc to: chỉ đường đi thử → nghe báo rẽ; nhờ người nhắn tin khi đang chỉ đường → nghe đọc tin; nhạc nhỏ lại rồi to lại
+- [ ] "tạm dừng" / "tua 30 giây" trên video web; mở Spotify/YouTube rồi "bài tiếp" → đổi bài
+- [ ] Cài APK release (không phải debug): mở được, nói lệnh được (Vosk), web chạy — kiểm tra bản thu gọn không làm hỏng gì
 - [ ] Cấp "Đọc thông báo ĐT"; nhờ người nhắn Zalo → tin hiện trên kính; gật → nói → người kia nhận được
 - [ ] "đọc thông báo", "tắt thông báo Zalo", "im lặng" có tác dụng
 - [ ] Cấp Vị trí, cắm kính, đi xe máy (người khác lái!) hoặc chạy xe đạp > 15 km/h: màn ẩn, dừng lại thì hiện
@@ -305,6 +315,16 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 | Dịch vụ bản đồ OSM miễn phí (tile, Nominatim, OSRM) | Chỉ hợp dùng nhẹ / demo; giới hạn ~1 lượt tìm/giây, có thể chậm hoặc từ chối | Phát hành thật cần nhà cung cấp riêng (MapTiler, Mapbox, Goong cho VN) hoặc tự host |
 | Kính chỉ 3DoF, không camera | Không bám vật thật, không nhận tay | Giới hạn phần cứng Air 2 |
 | Nóng & pin | Xuất hình + nhiều WebView + mic liên tục tốn pin nhanh | Cần đo khi test (mục 7) |
+
+### Phát hành APK (khoá ký)
+
+GitHub Actions build 2 file mỗi lần push: `xreal-space-debug-apk` (để test) và `xreal-space-release-apk` (gọn hơn, để gửi người khác cài).
+Bản release cần **khoá ký riêng** để các bản sau cài đè được lên bản trước. Làm **một lần**:
+1. Trên máy Windows: chuột phải `tools\make-release-key.ps1` → Run with PowerShell (cần Android Studio hoặc Java JDK để có `keytool`).
+2. Script tạo `D:\project\xreal-space\keys\xreal-space-release.jks` (khoá) và `secrets.txt`, tự mở Notepad.
+3. GitHub → repo → Settings → Secrets and variables → Actions → New repository secret: dán 3 giá trị `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`.
+4. **Sao lưu file .jks** (USB / Drive riêng), xoá `secrets.txt`. Mất khoá = người dùng phải gỡ app mới cài được bản mới.
+Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài được). Khoá không bao giờ nằm trong repo (`.gitignore` chặn `*.jks`).
 
 ## 9. Nợ kỹ thuật
 
@@ -356,6 +376,7 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.8.0 | Đọc to thông báo + chỉ đường (TTS tiếng Việt), điều khiển phát bằng giọng (video trên kính / app nhạc điện thoại), APK release (R8) + script tạo khoá ký |
 | 25/11/2026 | 0.7.0 | Bản đồ GPS thật (OSM) + chỉ đường bằng giọng; xem phim web: chặn quảng cáo/pop-up/chuyển trang, bản máy tính, xem tiếp; 3D SBS: chiều sâu cho màn hình và phim 3D |
 | 25/11/2026 | 0.6.0 | Thông báo thật của điện thoại trên kính + trả lời bằng giọng (gật đầu / "trả lời …"), tắt thông báo theo app, im lặng; ẩn màn khi đi nhanh theo GPS |
 | 25/11/2026 | 0.5.1 | Mã ghép đôi 4 số cho điều khiển từ xa (khoá 60 s sau 5 lần sai, người lạ không đá được máy đang nối); APK build thật lần đầu trên GitHub Actions |

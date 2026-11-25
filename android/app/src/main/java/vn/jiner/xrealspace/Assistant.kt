@@ -221,6 +221,7 @@ object Assistant : SpaceState.Controller {
 
     override fun replyNotif(text: String, key: String?) { PhoneNotifs.reply(app, text, key) }
     override fun setDesktopSite(on: Boolean) { SpaceHost.space?.setDesktopFocused(on) }
+    override fun media(action: vn.jiner.xrealspace.core.MediaAction, seconds: Int) { MediaControl.act(app, action, seconds) }
 
     /** Nod on a message pop-up: listen once, send what was said as the reply. */
     fun replyByVoice(key: String) {

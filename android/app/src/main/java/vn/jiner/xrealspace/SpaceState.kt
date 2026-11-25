@@ -81,6 +81,8 @@ object SpaceState {
     var rideSafety = true
     /** film sites: block ad hosts, pop-up windows and redirects to other sites (default on) */
     var adBlock = true
+    /** read notifications / turns out loud: off, only while riding or navigating, always */
+    var speakMode = vn.jiner.xrealspace.core.SpeakMode.RIDING
     /** draw real 3D (one image per eye) when the glasses are in SBS mode */
     var stereo3d = true
     /** distance (m) that looks "flat" in 3D: things nearer pop out. Air 2 optics ≈ 4 m */
@@ -111,6 +113,7 @@ object SpaceState {
         fun replyNotif(text: String, key: String?)
         /** switch the page you're looking at to its desktop / mobile layout */
         fun setDesktopSite(on: Boolean)
+        fun media(action: vn.jiner.xrealspace.core.MediaAction, seconds: Int)
     }
     var controller: Controller? = null
 
@@ -148,6 +151,7 @@ object SpaceState {
         if (prefsCtx != null) return
         prefsCtx = ctx.applicationContext
         CrashLog.install(ctx)
+        Speaker.init(ctx)
         config = load(ctx)
         loadSettings(ctx)
     }
@@ -210,6 +214,12 @@ object SpaceState {
     fun setDarkWeb(on: Boolean?) {
         darkWeb = on ?: !darkWeb; styleVersion++; saveSettings()
         notify("Web tối", if (darkWeb) "bật — đỡ chói trên kính" else "tắt", Colors.CYAN, 1.5)
+    }
+
+    fun setSpeak(mode: vn.jiner.xrealspace.core.SpeakMode) {
+        speakMode = mode; saveSettings()
+        notify("Đọc to", mode.title, Colors.CYAN, 2.0)
+        Speaker.say("Đọc to: ${mode.title}", flush = true, force = true)
     }
 
     fun setMap(on: Boolean?) { showMap = on ?: !showMap; notify("Bản đồ", if (showMap) "bật" else "tắt", Colors.GREEN, 1.5) }
@@ -325,6 +335,8 @@ object SpaceState {
             VoiceCommands.Cmd.ReadNotifs -> PhoneNotifs.read()
             is VoiceCommands.Cmd.Navigate -> Navigation.start(cmd.dest, cmd.profile)
             VoiceCommands.Cmd.StopNav -> Navigation.stop()
+            is VoiceCommands.Cmd.Media -> controller?.media(cmd.action, cmd.seconds)
+            is VoiceCommands.Cmd.Speak -> setSpeak(cmd.mode)
             is VoiceCommands.Cmd.AdBlock -> { adBlock = cmd.on; saveSettings(); notify("Chặn quảng cáo", if (cmd.on) "bật" else "tắt", Colors.CYAN, 2.0) }
             is VoiceCommands.Cmd.DesktopSite -> controller?.setDesktopSite(cmd.on)
             is VoiceCommands.Cmd.Reply -> controller?.replyNotif(cmd.text, null)
@@ -394,7 +406,7 @@ object SpaceState {
             .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("rideSafety", rideSafety)
-            .put("adBlock", adBlock)
+            .put("adBlock", adBlock).put("speakMode", speakMode.name)
             .put("stereo3d", stereo3d).put("stereoConvergeM", stereoConvergeM)
             .put("resume", org.json.JSONObject().apply { resume.entries().forEach { (k, v) -> put(k, v) } })
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
@@ -417,6 +429,7 @@ object SpaceState {
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)
             rideSafety = o.optBoolean("rideSafety", rideSafety)
             adBlock = o.optBoolean("adBlock", adBlock)
+            speakMode = runCatching { vn.jiner.xrealspace.core.SpeakMode.valueOf(o.optString("speakMode", speakMode.name)) }.getOrDefault(speakMode)
             stereo3d = o.optBoolean("stereo3d", stereo3d); stereoConvergeM = o.optDouble("stereoConvergeM", stereoConvergeM)
             o.optJSONObject("resume")?.let { r -> resume.load(r.keys().asSequence().associateWith { r.getDouble(it) }) }
             wakePhrases = o.optString("wakePhrases", wakePhrases.joinToString("|")).split("|").map { it.trim() }.filter { it.isNotEmpty() }

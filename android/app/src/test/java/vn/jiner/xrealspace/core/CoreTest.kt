@@ -493,4 +493,34 @@ class CoreTest {
         r.save("https://phim.x/ep2", 2690.0, 2700.0); assertEquals(0.0, r.get("https://phim.x/ep2"), 1e-9) // finished
         assertEquals("12:34", ResumeStore.clock(754.0)); assertEquals("1:02:03", ResumeStore.clock(3723.0))
     }
+
+    // ---------------------------------------------------------------- 0.8: speak out loud, media control
+    @Test fun mediaAndSpeechCommands() {
+        val P = VoiceCommands::parse
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.PAUSE), P("tạm dừng"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.PAUSE), P("dừng phim"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.PLAY), P("phát tiếp"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.NEXT), P("bài tiếp theo"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.PREV), P("bài trước"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.SEEK, 10), P("tua tới"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.SEEK, 30), P("tua 30 giây"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.SEEK, -10), P("lùi 10 giây"))
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.SEEK, -120), P("tua lại 2 phút"))
+        assertEquals(VoiceCommands.Cmd.Speak(SpeakMode.ALWAYS), P("bật đọc to"))
+        assertEquals(VoiceCommands.Cmd.Speak(SpeakMode.OFF), P("tắt đọc to"))
+        // older commands still win where they should
+        assertEquals(VoiceCommands.Cmd.StopNav, P("dừng chỉ đường"))
+        assertEquals(VoiceCommands.Cmd.Prompter(false), P("dừng đọc"))
+        assertEquals(VoiceCommands.Cmd.MuteNotifs(true, null), P("im lặng"))
+    }
+
+    @Test fun speechText() {
+        assertTrue(Speech.shouldSpeak(SpeakMode.RIDING, riding = true)); assertFalse(Speech.shouldSpeak(SpeakMode.RIDING, false))
+        assertFalse(Speech.shouldSpeak(SpeakMode.OFF, true)); assertTrue(Speech.shouldSpeak(SpeakMode.ALWAYS, false))
+        assertEquals("150 mét", Speech.distance(155.0)); assertEquals("1,2 ki lô mét", Speech.distance(1234.0))
+        assertEquals("Zalo, An: tối nay đi ăn không", Speech.notification(PhoneNotif("k", "p", "Zalo", "An", "tối nay đi ăn không", true, 0)))
+        val step = NavStep(LatLon(0.0, 0.0), "turn", "left", "Lê Lợi", 100.0)
+        assertEquals("150 mét nữa, rẽ trái vào Lê Lợi", Speech.turn(step, 150.0))
+        assertEquals(SpeakMode.RIDING, SpeakMode.OFF.next())
+    }
 }

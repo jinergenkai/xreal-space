@@ -13,6 +13,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import vn.jiner.xrealspace.core.NotifFeed
 import vn.jiner.xrealspace.core.PhoneNotif
+import vn.jiner.xrealspace.core.Speech
 
 /**
  * Real phone notifications on the glasses. The user grants "Notification access" once (Settings); Android then
@@ -71,12 +72,14 @@ object PhoneNotifs {
         val (title, body) = NotifFeed.preview(n, moving = st.speedLocked)
         val hint = if (n.canReply && !st.speedLocked) "   (gật = trả lời bằng giọng · lắc = bỏ qua)" else ""
         st.notify(title, body + hint, Colors.AMBER, if (n.canReply) 10.0 else 6.0, actionable = n.canReply && !st.speedLocked)
+        Speaker.say(Speech.notification(n))
         st.toastNotifKey = if (n.canReply) n.key else null
     }
 
     fun read() {
         val list = feed.recent(6)
         SpaceState.showCard("Thông báo (${list.size})", NotifFeed.readout(list), 20.0)
+        Speaker.say(if (list.isEmpty()) "Không có thông báo" else list.joinToString(". ") { Speech.notification(it) }, flush = true, force = true)
     }
 
     /** Fill the app's own reply box (RemoteInput) and send it. key = null -> newest message that can be replied to. */

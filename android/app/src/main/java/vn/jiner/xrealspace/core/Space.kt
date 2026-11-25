@@ -264,6 +264,10 @@ object VoiceCommands {
         /** real GPS navigation; profile "car" | "bike" | "foot" */
         data class Navigate(val dest: String, val profile: String = "car") : Cmd()
         object StopNav : Cmd()
+        /** play / pause / next… on the video you're watching, else on the phone's music app; seek in seconds */
+        data class Media(val action: MediaAction, val seconds: Int = 0) : Cmd()
+        /** read things out loud (TTS): on / off / only while riding */
+        data class Speak(val mode: SpeakMode) : Cmd()
         /** film sites: block ads / pop-ups / redirects */
         data class AdBlock(val on: Boolean) : Cmd()
         /** desktop version of the page you're looking at (true) / mobile (false) */
@@ -371,6 +375,23 @@ object VoiceCommands {
         if (has("chan quang cao", "block ads")) return Cmd.AdBlock(true)
         if (has("ban may tinh", "giao dien may tinh", "desktop site", "desktop mode")) return Cmd.DesktopSite(true)
         if (has("ban dien thoai", "giao dien dien thoai", "mobile site")) return Cmd.DesktopSite(false)
+
+        // speaking out loud
+        if (has("tat doc to", "tat giong doc", "dung doc to", "speech off")) return Cmd.Speak(SpeakMode.OFF)
+        if (has("doc to khi di", "chi doc khi di xe")) return Cmd.Speak(SpeakMode.RIDING)
+        if (has("bat doc to", "doc to len", "bat giong doc", "speech on")) return Cmd.Speak(SpeakMode.ALWAYS)
+
+        // media: the video in the glasses, else the phone's music / video app
+        Regex("^(?:tua|lui|tua lai|tua toi|tua nhanh|seek|skip|rewind)(?:\\s+(?:lai|toi|ve|nhanh|back|forward))?(?:\\s+(\\d+))?\\s*(giay|phut|seconds?|minutes?|s)?\\b").find(t)?.let { m ->
+            val n = m.groupValues[1].toIntOrNull() ?: 10
+            val unit = if (m.groupValues[2].startsWith("phut") || m.groupValues[2].startsWith("minute")) 60 else 1
+            val back = t.startsWith("lui") || t.startsWith("tua lai") || t.startsWith("rewind") || t.contains(" back")
+            return Cmd.Media(MediaAction.SEEK, (if (back) -1 else 1) * n * unit)
+        }
+        if (has("tam dung", "dung phim", "dung nhac", "dung video", "pause")) return Cmd.Media(MediaAction.PAUSE)
+        if (has("phat tiep", "tiep tuc phat", "xem tiep", "nghe tiep", "phat nhac", "play", "resume")) return Cmd.Media(MediaAction.PLAY)
+        if (has("bai tiep", "bai sau", "tap tiep", "tap sau", "next track", "next song", "next episode")) return Cmd.Media(MediaAction.NEXT)
+        if (has("bai truoc", "tap truoc", "previous track", "previous song")) return Cmd.Media(MediaAction.PREV)
 
         // phone notifications (before generic "tắt …" / "mở …" rules)
         if (t.startsWith("tra loi ") || t.startsWith("reply ")) {

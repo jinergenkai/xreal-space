@@ -14,3 +14,8 @@ venv/
 *.zip
 .DS_Store
 Thumbs.db
+
+# signing keys never go in the repo
+*.jks
+*.keystore
+keys/

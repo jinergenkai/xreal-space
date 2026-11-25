@@ -36,6 +36,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import vn.jiner.xrealspace.core.FastPath
 import vn.jiner.xrealspace.core.RemoteProtocol
+import vn.jiner.xrealspace.core.MediaAction
 import vn.jiner.xrealspace.core.FollowMode
 import vn.jiner.xrealspace.core.VoiceCommands
 import vn.jiner.xrealspace.core.WakeWord
@@ -652,6 +653,13 @@ class MainActivity : Activity(), TouchpadView.Host {
         adBtn = btn(adLabel()) { SpaceState.adBlock = !SpaceState.adBlock; SpaceState.saveSettings(); adBtn.text = adLabel() }
         s3dBtn = btn(s3dLabel()) { SpaceState.stereo3d = !SpaceState.stereo3d; SpaceState.saveSettings(); s3dBtn.text = s3dLabel() }
         col.addView(row(adBtn, btn("Bản máy tính") { space?.setDesktopFocused(true) }, btn("Bản ĐT") { space?.setDesktopFocused(false) }))
+        fun speakLabel() = "Đọc to: ${SpaceState.speakMode.title}"
+        lateinit var speakBtn: Button
+        speakBtn = btn(speakLabel()) { SpaceState.setSpeak(SpaceState.speakMode.next()); speakBtn.text = speakLabel() }
+        col.addView(row(btn("⏪ 10s") { SpaceState.execute(VoiceCommands.Cmd.Media(MediaAction.SEEK, -10)) },
+            btn("⏸") { SpaceState.execute(VoiceCommands.Cmd.Media(MediaAction.PAUSE)) },
+            btn("▶") { SpaceState.execute(VoiceCommands.Cmd.Media(MediaAction.PLAY)) },
+            btn("⏩ 10s") { SpaceState.execute(VoiceCommands.Cmd.Media(MediaAction.SEEK, 10)) }, speakBtn))
         col.addView(row(s3dBtn,
             btn("Độ nổi +") { SpaceState.stereoConvergeM = (SpaceState.stereoConvergeM + 1).coerceAtMost(12.0); SpaceState.saveSettings()
                 SpaceState.notify("Độ nổi 3D", "Mặt phẳng phẳng: %.0f m".format(SpaceState.stereoConvergeM), Colors.CYAN, 2.0) },

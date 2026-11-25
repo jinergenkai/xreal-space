@@ -11,14 +11,28 @@ android {
         applicationId = "vn.jiner.xrealspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.7.0"
+        versionCode = 9
+        versionName = "0.8.0"
+    }
+
+    // Release key comes from the environment (GitHub secrets on CI, see docs/WIKI.md "Phát hành").
+    // Without it the release APK is signed with the debug key: installable, but not the official signature.
+    val ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+    signingConfigs {
+        if (ksPath != null && file(ksPath).exists()) create("release") {
+            storeFile = file(ksPath)
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "xreal-space"
+            keyPassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug") // test build: installable without a keystore
+            isMinifyEnabled = true          // R8: drops unused library code -> smaller APK
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

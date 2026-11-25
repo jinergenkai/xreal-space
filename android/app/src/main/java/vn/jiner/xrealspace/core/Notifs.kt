@@ -99,3 +99,30 @@ class SpeedGuard(
 
     val kmh get() = lastSpeedMps * 3.6
 }
+
+enum class MediaAction { PLAY, PAUSE, NEXT, PREV, SEEK }
+
+/** When the phone speaks (through the earphones / glasses speakers). */
+enum class SpeakMode(val title: String) {
+    OFF("Tắt"), RIDING("Khi đi xe"), ALWAYS("Luôn");
+    fun next() = values()[(ordinal + 1) % values().size]
+}
+
+/** What to say out loud. Short, natural Vietnamese; numbers written the way the TTS reads them well. */
+object Speech {
+    fun shouldSpeak(mode: SpeakMode, riding: Boolean) = mode == SpeakMode.ALWAYS || (mode == SpeakMode.RIDING && riding)
+
+    fun distance(m: Double): String = when {
+        m < 1000 -> "${((m / 10).toInt() * 10).coerceAtLeast(10)} mét"
+        else -> "%.1f ki lô mét".format(m / 1000).replace('.', ',').replace(",0 ", " ")
+    }
+
+    /** "Zalo, An: tối nay đi ăn không" — the full message is fine to HEAR while riding, just not to read */
+    fun notification(n: PhoneNotif): String {
+        val who = n.title.takeIf { it.isNotBlank() && it != n.app }?.let { ", $it" } ?: ""
+        return "${n.app}$who: ${n.text.take(200)}".trim().trimEnd(':')
+    }
+
+    fun turn(step: NavStep, toM: Double): String =
+        if (step.type == "arrive") "Còn ${distance(toM)} nữa là đến nơi" else "${distance(toM)} nữa, ${step.text().replaceFirstChar { it.lowercase() }}"
+}

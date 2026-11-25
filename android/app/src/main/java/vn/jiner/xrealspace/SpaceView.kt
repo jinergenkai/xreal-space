@@ -710,6 +710,19 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             e.dispatchEvent(new Event('input',{bubbles:true}));})($js)""".trimIndent(), null)
     }
 
+    /**
+     * Media keys for the video/audio in the page you look at (or the cinema).
+     * cb gets "ok", "none" (no media in the page) or "unsupported" (next/previous: pages have no standard for that).
+     */
+    fun mediaInPage(action: vn.jiner.xrealspace.core.MediaAction, seconds: Int, cb: (String) -> Unit) {
+        val w = focusedWeb() ?: run { cb("none"); return }
+        val js = "(function(a,s){var b=null,ar=-1;document.querySelectorAll('video,audio').forEach(function(v){" +
+            "var x=(v.clientWidth*v.clientHeight)||1;if(!v.paused)x+=1e9;if(x>ar){ar=x;b=v;}});" +
+            "if(!b)return 'none';if(a=='PLAY')b.play();else if(a=='PAUSE')b.pause();" +
+            "else if(a=='SEEK')b.currentTime=Math.max(0,b.currentTime+s);else return 'unsupported';return 'ok';})('${action.name}',$seconds)"
+        w.evaluateJavascript(js) { r -> cb(r?.trim('"') ?: "none") }
+    }
+
     fun setDesktopFocused(on: Boolean) {
         val p = panels.getOrNull(SpaceState.focusedPanel)
         if (p == null || p.isMirror) { SpaceState.notify("Bản máy tính", "Nhìn vào một màn web trước", Colors.AMBER, 2.5); return }
