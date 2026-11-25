@@ -390,7 +390,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 
 - Token lấy từ repo `minimal-ui-kit/material-kit-react` (src/theme): grey #F9FAFB/#F4F6F8/#919EAB/#637381/#1C252E/#141A21, primary #1877F2, secondary #8E33FF, info #00B8D9, success #22C55E, warning #FFAB00, error #FF5630 (mỗi màu có lighter/light/dark/darker). Thẻ trắng bo 16 + bóng "card" của kit; nút bo 8, chữ đậm 14; nút chính = contained "inherit" (#1C252E); ô nhập viền mảnh; thẻ việc cần làm = AnalyticsWidgetSummary (gradient lighter→light 48 %, chữ màu darker); nhãn trạng thái = Label "soft".
 - Font: **Public Sans** (thân chữ — DM Sans của kit thiếu dấu tiếng Việt) + **Barlow Bold** (tiêu đề, như kit). OFL, nằm ở `assets/fonts` kèm giấy phép.
-- Điện thoại: giao diện sáng như kit. Beam: bản tối (grey 900/800) vì màn hình Beam chính là kính — nền trắng sẽ chói.
+- Giao diện: nút "Giao diện: Tự động / Sáng / Tối" ở cuối màn chính (Tự động = theo chế độ tối của Android). Beam: luôn bản tối (grey 900/800) vì màn hình Beam chính là kính — nền trắng sẽ chói.
 - Màn chính: trạng thái → thẻ "Mở không gian" → 4 thẻ việc (Xem phim · Làm việc · Đọc sách · Đi đường) → Cần thiết lập → Kiểm tra / Remote / Nâng cao (mọi nút cũ).
 
 ### Chạy trên XREAL Beam đời đầu (0.11.0)

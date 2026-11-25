@@ -164,7 +164,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         CrashLog.guard("Giọng nói (Vosk)") { Assistant.init(this) }
         Assistant.mirrorRequester = { after -> requestMirror(after) }
         Assistant.docPicker = { pickDoc() }
-        Ui.init(this, SpaceState.onBeam)
+        Ui.init(this, Ui.wantsDark(this, SpaceState.onBeam))
         window.statusBarColor = Ui.BG
         @Suppress("DEPRECATION")
         if (!Ui.dark) window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -185,6 +185,12 @@ class MainActivity : Activity(), TouchpadView.Host {
             homePrimary?.post { homePrimary?.requestFocus() }
         }
         handleIntent(intent)
+    }
+
+    /** Android dark mode switched while the app is open: follow it when the theme is "Tự động" */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!crashScreen && Ui.theme(this) == Ui.Theme.AUTO && Ui.wantsDark(this, SpaceState.onBeam) != Ui.dark) recreate()
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); if (!crashScreen) handleIntent(intent) }
@@ -439,6 +445,9 @@ class MainActivity : Activity(), TouchpadView.Host {
             Ui.soft(c, "Kiểm tra") { startActivity(Intent(c, HealthActivity::class.java)) },
             Ui.soft(c, "Remote") { showAdvanced(scroll, true, remoteText) },
             Ui.soft(c, "Nâng cao") { showAdvanced(scroll, advanced.visibility != View.VISIBLE, null) }))
+        if (!SpaceState.onBeam) page.addView(Ui.soft(c, "Giao diện: ${Ui.theme(c).title}") {
+            Ui.setTheme(c, Ui.theme(c).next()); recreate()
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(3), dp(6), dp(3), 0) })
         refreshHome()
     }
 

@@ -24,7 +24,7 @@ class HealthActivity : Activity() {
         SpaceState.init(this)
         CrashLog.guard("Giọng nói (Vosk)") { Assistant.init(this) }
         CrashLog.guard("Cảm biến kính (USB/IMU)") { Sensors.init(this) }
-        Ui.init(this, SpaceState.onBeam)
+        Ui.init(this, Ui.wantsDark(this, SpaceState.onBeam))
         window.statusBarColor = Ui.BG
         @Suppress("DEPRECATION")
         if (!Ui.dark) window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR

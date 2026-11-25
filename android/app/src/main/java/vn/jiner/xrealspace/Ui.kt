@@ -77,6 +77,19 @@ object Ui {
 
     private fun ensure(c: Context) { if (!loaded) init(c, dark) }
 
+    /** user choice: "auto" (follow Android dark mode), "light", "dark". The Beam is always dark: its screen is the glasses. */
+    enum class Theme(val title: String) { AUTO("Tự động"), LIGHT("Sáng"), DARK("Tối");
+        fun next() = entries[(ordinal + 1) % entries.size] }
+
+    fun theme(c: Context) = try { Theme.valueOf(c.getSharedPreferences("ui", Context.MODE_PRIVATE).getString("theme", "AUTO")!!) } catch (_: Exception) { Theme.AUTO }
+    fun setTheme(c: Context, t: Theme) = c.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putString("theme", t.name).apply()
+
+    fun wantsDark(c: Context, onBeam: Boolean): Boolean = onBeam || when (theme(c)) {
+        Theme.DARK -> true
+        Theme.LIGHT -> false
+        Theme.AUTO -> (c.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
     fun Context.dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     fun Context.dpf(v: Int) = v * resources.displayMetrics.density
 
