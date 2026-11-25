@@ -144,10 +144,10 @@ class MainActivity : Activity(), TouchpadView.Host {
         SpaceState.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // plugging the glasses in = connect IMU + show the space on them + phone becomes the touchpad, no buttons
-        Sensors.init(this)
+        CrashLog.guard("Cảm biến kính (USB/IMU)") { Sensors.init(this) }
         Sensors.listener = { refreshStatus(); refreshSetup(); if (usb.connected && started && wantGlassesOutput) showOnGlasses(quiet = true) }
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        Assistant.init(this)
+        CrashLog.guard("Giọng nói (Vosk)") { Assistant.init(this) }
         Assistant.mirrorRequester = { after -> requestMirror(after) }
         Assistant.docPicker = { pickDoc() }
         buildUi()
