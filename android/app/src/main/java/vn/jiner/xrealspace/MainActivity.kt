@@ -176,9 +176,9 @@ class MainActivity : Activity(), TouchpadView.Host {
         CrashLog.guard("Kết nối kính (USB)") { connectGlasses() }
         // Beam: no external display to present on -> the space goes full-screen here and the Beam puts it on the glasses
         if (SpaceState.onBeam && glassesDisplay() == null) {
-            SpaceState.log("XREAL Beam detected -> space full-screen, D-pad controls")
-            showOnPhone()
-            SpaceState.notify("Điều khiển trên Beam", "◀▶▲▼ xoay nhìn · nút giữa = bấm vào ô · Back = menu", Colors.CYAN, 8.0)
+            // home first (one big "Mở không gian" button, focused for the D-pad); the space opens full-screen from there
+            SpaceState.log("XREAL Beam detected -> home, then space full-screen with D-pad controls")
+            homePrimary?.post { homePrimary?.requestFocus() }
         }
         handleIntent(intent)
     }
@@ -384,6 +384,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     private var heroTitle: TextView? = null
     private var heroDesc: TextView? = null
     private var todoBox: LinearLayout? = null
+    private var homePrimary: View? = null
 
     private fun buildHome(page: LinearLayout, scroll: ScrollView) {
         val c = this
@@ -405,7 +406,7 @@ class MainActivity : Activity(), TouchpadView.Host {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF0B3B2E.toInt(), Ui.PAPER)).apply { cornerRadius = dpf(18) }
             heroTitle = Ui.title(c, "", 20f); addView(heroTitle)
             heroDesc = Ui.body(c, "", 0xFFC4CDD5.toInt(), 14f).apply { setPadding(0, dp(6), 0, dp(16)) }; addView(heroDesc)
-            addView(Ui.primary(c, "▶  Mở không gian") { openSpace() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(Ui.primary(c, "▶  Mở không gian") { openSpace() }.also { homePrimary = it }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(Ui.gap(c, 8))
             addView(Ui.soft(c, "🎓  Lần đầu dùng? Xem hướng dẫn 1 phút") { SpaceState.startTutorial(); openSpace() },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -490,7 +491,10 @@ class MainActivity : Activity(), TouchpadView.Host {
         }
     }
 
-    private fun openSpace() { if (glassesDisplay() != null) showOnGlasses() else showOnPhone() }
+    private fun openSpace() {
+        if (glassesDisplay() != null) showOnGlasses() else showOnPhone()
+        if (SpaceState.onBeam) SpaceState.notify("Điều khiển", "◀▶▲▼ xoay nhìn · nút giữa = chọn ô · Back = về màn chính", Colors.CYAN, 6.0)
+    }
 
     private fun askText(title: String, hint: String, value: String, actions: List<Pair<String, (String) -> Unit>>) {
         val field = EditText(this).apply { this.hint = hint; setText(value); setSingleLine(); Ui.styleField(this) }
