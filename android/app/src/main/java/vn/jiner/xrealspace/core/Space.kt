@@ -286,7 +286,19 @@ object VoiceCommands {
         /** phone screen mirror into a grid slot (null = keep / default 4), off = stop */
         data class Mirror(val slot: Int?) : Cmd()
         object MirrorOff : Cmd()
-        data class Captions(val mode: CaptionMode) : Cmd()
+        /** media = listen to what the phone is PLAYING (film), not the microphone */
+        data class Captions(val mode: CaptionMode, val media: Boolean = false) : Cmd()
+        /** pick a PDF / EPUB on the phone and open it on the glasses */
+        object OpenDoc : Cmd()
+        /** document you look at: step = +1/-1 slice, or go to [page] (1-based) */
+        data class DocPage(val step: Int = 0, val page: Int? = null) : Cmd()
+        data class Timer(val minutes: Int, val label: String) : Cmd()
+        object TimerStop : Cmd()
+        data class Note(val text: String) : Cmd()
+        object ReadNotes : Cmd()
+        object Agenda : Cmd()
+        object WeatherNow : Cmd()
+        data class TutorialCmd(val start: Boolean) : Cmd()
         data class Prompter(val on: Boolean?) : Cmd()
         object Back : Cmd()
         object Home : Cmd()
@@ -376,6 +388,36 @@ object VoiceCommands {
         if (has("ban may tinh", "giao dien may tinh", "desktop site", "desktop mode")) return Cmd.DesktopSite(true)
         if (has("ban dien thoai", "giao dien dien thoai", "mobile site")) return Cmd.DesktopSite(false)
 
+        // documents
+        if (has("mo tai lieu", "doc tai lieu", "mo sach", "doc sach", "mo pdf", "open document", "open pdf")) return Cmd.OpenDoc
+        Regex("^(?:sang |toi |den |ve )?trang (?:so )?(\\d+)$").find(t)?.let { return Cmd.DocPage(page = it.groupValues[1].toInt()) }
+        if (has("trang sau", "trang tiep", "lat trang", "cuon xuong", "next page")) return Cmd.DocPage(step = 1)
+        if (has("trang truoc", "lat lai", "cuon len", "previous page")) return Cmd.DocPage(step = -1)
+
+        // timer / pomodoro
+        if (has("dung hen gio", "huy hen gio", "tat hen gio", "dung pomodoro", "stop timer")) return Cmd.TimerStop
+        Regex("(?:nghi|break)\\s+(\\d+)\\s*(?:phut|minutes?|min)").find(t)?.let { return Cmd.Timer(it.groupValues[1].toInt(), "Nghỉ") }
+        if (has("pomodoro", "tap trung 25", "focus timer")) return Cmd.Timer(Countdown.POMODORO_MIN, "Pomodoro")
+        Regex("(?:hen gio|dem nguoc|timer|bao thuc sau)\\s+(\\d+)\\s*(phut|gio|minutes?|hours?|min)?").find(t)?.let {
+            val n = it.groupValues[1].toInt(); val h = it.groupValues[2].startsWith("gio") || it.groupValues[2].startsWith("hour")
+            return Cmd.Timer(if (h) n * 60 else n, "Hẹn giờ")
+        }
+
+        // voice notes: keep the user's own words (with accents)
+        Regex("^(?:ghi chu|ghi lai|note|take a note)\\s+(.+)$").find(t)?.let { m ->
+            val words = text.trim().split(Regex("\\s+")); val skip = t.substring(0, m.groups[1]!!.range.first).trim().split(' ').size
+            return Cmd.Note(words.drop(skip).joinToString(" "))
+        }
+        if (has("doc ghi chu", "xem ghi chu", "read notes", "show notes")) return Cmd.ReadNotes
+
+        // today
+        if (has("lich hom nay", "hom nay co gi", "lich cua toi", "my agenda", "today s agenda")) return Cmd.Agenda
+        // only the short question; "tìm thời tiết Sài Gòn ô 6" stays a web search
+        if (Regex("^(?:xem |cho xem )?(?:thoi tiet|weather)(?: hom nay| bay gio| the nao| sao| ngoai troi)?$").matches(t) ||
+            has("co mua khong", "troi mua khong", "sap mua khong")) return Cmd.WeatherNow
+        if (has("bo qua huong dan", "tat huong dan", "skip tutorial")) return Cmd.TutorialCmd(false)
+        if (has("huong dan su dung", "xem huong dan", "huong dan", "tutorial")) return Cmd.TutorialCmd(true)
+
         // speaking out loud
         if (has("tat doc to", "tat giong doc", "dung doc to", "speech off")) return Cmd.Speak(SpeakMode.OFF)
         if (has("doc to khi di", "chi doc khi di xe")) return Cmd.Speak(SpeakMode.RIDING)
@@ -427,6 +469,16 @@ object VoiceCommands {
         }
         // live captions / interpreter
         if (has("tat phu de", "tat dich", "captions off", "stop captions")) return Cmd.Captions(CaptionMode.OFF)
+        // subtitles for the film that is playing (its audio, not the room): "phụ đề phim", "dịch phim", "phụ đề video tiếng Việt"
+        if (has("phim", "video", "movie", "film") && has("phu de", "dich", "caption", "subtitle", "translate")) {
+            val mode = when {
+                has("tieng viet", "vietnamese") && !has("dich") -> CaptionMode.VI
+                has("tieng anh", "english") && !has("dich") -> CaptionMode.EN
+                has("dich", "translate") -> CaptionMode.EN_TO_VI
+                else -> CaptionMode.EN_TO_VI          // films with subtitles needed are usually foreign
+            }
+            return Cmd.Captions(mode, media = true)
+        }
         if (has("dich sang tieng anh", "dich viet anh", "viet sang anh", "translate to english")) return Cmd.Captions(CaptionMode.VI_TO_EN)
         if (has("dich tieng anh", "dich anh viet", "anh sang viet", "dich", "translate", "phien dich")) return Cmd.Captions(CaptionMode.EN_TO_VI)
         if (has("phu de tieng anh", "english captions", "english subtitles")) return Cmd.Captions(CaptionMode.EN)

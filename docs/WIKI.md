@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.8.0
+Cập nhật: 25/11/2026 · bản 0.9.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -82,6 +82,10 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Phim web | Chặn quảng cáo (danh sách tên miền), chặn cửa sổ bật lên và chuyển trang lạ không do bấm | Chờ test | 0.7 |
 | Phim web | Bản máy tính / bản điện thoại cho trang đang nhìn; tự nhớ chỗ đang xem và xem tiếp | Chờ test | 0.7 |
 | 3D | Kính ở chế độ SBS (giữ Độ sáng+): mỗi mắt một hình, màn hình gần thì nổi ra; phim 3D SBS trải đủ hai mắt; chỉnh độ nổi | Chờ test (thử nghiệm) | 0.7 |
+| Phụ đề phim | Phụ đề / dịch từ **tiếng của phim đang phát** (không qua micro): video trên kính hoặc app trên điện thoại (Android 10+, app không chặn thu) | Chờ test | 0.9 |
+| Tài liệu | Đọc PDF (PdfRenderer) và EPUB trên kính; nền tối; lật bằng vuốt 2 ngón / "trang sau" / "trang 12"; nhớ trang | Chờ test | 0.9 |
+| Tiện ích | Thanh dưới đồng hồ: thời tiết · hẹn giờ · lịch sắp tới; nhắc lịch trước 10 phút; Pomodoro; "ghi chú …" bằng giọng, chia sẻ ghi chú | Chờ test | 0.9 |
+| Hướng dẫn | Lần đầu lên kính: 5 bước (về giữa, nhìn, bấm, nói, gật), làm đúng mới qua; "xem hướng dẫn" / "bỏ qua hướng dẫn" | Chờ test | 0.9 |
 | Giọng nói | Đọc to thông báo và chỉ đường qua tai nghe (TTS tiếng Việt có sẵn trong máy), nhạc tự nhỏ lại khi đọc; chế độ Tắt / Khi đi xe / Luôn | Chờ test | 0.8 |
 | Điều khiển phát | "tạm dừng", "phát tiếp", "tua 30 giây", "lùi 10 giây", "bài tiếp/trước": video trên kính, không có thì app nhạc của điện thoại | Chờ test | 0.8 |
 | Phát hành | APK bản release (R8 thu gọn) trên CI; ký bằng khoá riêng khi có secret | Đã build | 0.8 |
@@ -146,6 +150,18 @@ Trang tự nhớ chỗ đang xem; mở lại là xem tiếp (chỉ với video n
 
 **3D (0.7, thử nghiệm):** giữ nút **Độ sáng +** trên kính ~2 giây → kính chuyển 3840×1080 (SBS), app tự nhận và vẽ mỗi mắt một hình: các màn ở gần nổi ra trước.
 Phim 3D SBS: bật toàn màn hình là trải đủ hai mắt. Phim thường: giữ nút lần nữa để về 2D. Mỏi mắt → "Độ nổi +" (giảm độ nổi) hoặc tắt 3D trong app.
+
+**Phụ đề phim (0.9):** nói "phụ đề phim" (giữ nguyên tiếng) hoặc "dịch phim" (Anh → Việt, cần LLM), hoặc nút 🎬 trong mục Phụ đề.
+Lần đầu điện thoại hỏi quyền ghi màn hình: chọn Cho phép (Android dùng chung quyền này để thu âm thanh đang phát). Cần Android 10+.
+App chặn thu (Netflix, một số app ngân hàng / DRM) thì không có phụ đề. "tắt phụ đề" để dừng.
+
+**Tài liệu (0.9):** "mở tài liệu" hoặc nút 📖 → chọn PDF / EPUB trên điện thoại → hiện ở ô 5. PDF: mỗi trang chia thành vài phần vừa khung, nền tối.
+Lật: vuốt 2 ngón trái/phải, "trang sau" / "trang trước" / "trang 12" (EPUB: "trang N" = chương N). Tự nhớ chỗ đang đọc; nút "Đọc tiếp" mở lại tài liệu gần nhất.
+
+**Tiện ích (0.9):** dưới đồng hồ trên kính: thời tiết · hẹn giờ · lịch sắp tới. Cấp quyền **Lịch** ở thẻ Thiết lập để có lịch + nhắc trước 10 phút.
+Nói "pomodoro" (25 phút), "hẹn giờ 10 phút", "nghỉ 5 phút", "dừng hẹn giờ", "ghi chú gọi anh Khoa", "đọc ghi chú", "lịch hôm nay", "thời tiết". Ghi chú lưu trong máy, nút "Chia sẻ ghi chú" để gửi đi.
+
+**Hướng dẫn (0.9):** lần đầu lên kính tự hiện 5 bước; mỗi bước phải làm thử mới qua. Nút "🎓 Hướng dẫn trên kính" để xem lại.
 
 **Đọc to & điều khiển phát (0.8):** mặc định đọc to **khi đi xe** (đang đi nhanh hoặc đang chỉ đường): đọc tin nhắn, báo rẽ. Nút "Đọc to" trong app đổi Tắt / Khi đi xe / Luôn, hoặc nói "bật đọc to" / "tắt đọc to".
 Nếu máy báo chưa có giọng tiếng Việt: cài "Speech Services by Google" → Cài đặt → tải giọng tiếng Việt.
@@ -265,6 +281,10 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Bản đồ: ra ngoài trời → ô bản đồ hiện bản đồ thật, mũi tên theo hướng đi; "chỉ đường tới <chỗ gần>" → đường xanh, báo rẽ trước ~150 m, đi lệch → tìm đường mới
 - [ ] Phim: mở 1 trang phim nhiều quảng cáo → ít pop-up / chuyển trang; xem 5 phút, đóng, mở lại → "Xem tiếp từ …"; "bản máy tính" đổi giao diện
 - [ ] 3D: giữ Độ sáng+ 2 giây → app báo "Chế độ 3D", màn hình có chiều sâu, không bị nhân đôi/lệch khó chịu; mở video 3D SBS toàn màn → nổi khối. Nếu mắt nhòe/lệch: thử Độ nổi ±, ghi lại giá trị dễ chịu
+- [ ] Hướng dẫn: lần đầu lên kính → hiện bước 1/5; làm đúng từng bước → qua; "bỏ qua hướng dẫn" tắt được
+- [ ] Phụ đề phim: mở video YouTube tiếng Anh trên kính → "dịch phim" → cho phép ghi màn hình → phụ đề theo tiếng phim (không lẫn tiếng người nói trong phòng)
+- [ ] Tài liệu: mở 1 PDF và 1 EPUB; lật trang bằng vuốt và giọng; đóng app mở lại → "Đọc tiếp" đúng chỗ
+- [ ] Tiện ích: cấp Lịch + Vị trí → thời tiết và lịch hiện dưới đồng hồ; tạo sự kiện sau 12 phút → nhắc lúc còn 10 phút; "hẹn giờ 1 phút" → rung + đọc; "ghi chú …" rồi "đọc ghi chú"
 - [ ] Đọc to: chỉ đường đi thử → nghe báo rẽ; nhờ người nhắn tin khi đang chỉ đường → nghe đọc tin; nhạc nhỏ lại rồi to lại
 - [ ] "tạm dừng" / "tua 30 giây" trên video web; mở Spotify/YouTube rồi "bài tiếp" → đổi bài
 - [ ] Cài APK release (không phải debug): mở được, nói lệnh được (Vosk), web chạy — kiểm tra bản thu gọn không làm hỏng gì
@@ -360,6 +380,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 - [x] Bản đồ GPS thật + chỉ đường (0.7).
 - [x] Xem phim web: chặn quảng cáo / pop-up / chuyển trang, bản máy tính, xem tiếp (0.7).
 - [x] 3D SBS: chiều sâu cho màn hình + phim 3D (0.7, cần chỉnh trên kính thật).
+- [x] Phụ đề từ tiếng phim, đọc PDF/EPUB, thanh tiện ích, hướng dẫn lần đầu (0.9).
 - [ ] Render GL: méo phối cảnh khi nhìn xiên (chưa cần lắm vì màn luôn quay về phía mắt).
 - [ ] Backend nhỏ giữ key Jev / LLM, đếm lượt (Docker, chạy trên server của Hùng).
 - [ ] Render GL: méo phối cảnh, 3D SBS cho phim 3D.
@@ -376,6 +397,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.9.0 | Phụ đề/dịch từ tiếng phim đang phát; đọc PDF/EPUB trên kính; thanh tiện ích (thời tiết, hẹn giờ/Pomodoro, lịch + nhắc, ghi chú giọng); hướng dẫn 5 bước lần đầu |
 | 25/11/2026 | 0.8.0 | Đọc to thông báo + chỉ đường (TTS tiếng Việt), điều khiển phát bằng giọng (video trên kính / app nhạc điện thoại), APK release (R8) + script tạo khoá ký |
 | 25/11/2026 | 0.7.0 | Bản đồ GPS thật (OSM) + chỉ đường bằng giọng; xem phim web: chặn quảng cáo/pop-up/chuyển trang, bản máy tính, xem tiếp; 3D SBS: chiều sâu cho màn hình và phim 3D |
 | 25/11/2026 | 0.6.0 | Thông báo thật của điện thoại trên kính + trả lời bằng giọng (gật đầu / "trả lời …"), tắt thông báo theo app, im lặng; ẩn màn khi đi nhanh theo GPS |

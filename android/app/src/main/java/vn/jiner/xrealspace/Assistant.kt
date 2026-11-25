@@ -181,24 +181,57 @@ object Assistant : SpaceState.Controller {
     override fun phoneHome(): Boolean = ControlService.instance?.home() ?: false
 
     // ------------------------------------------------------------------ live captions / interpreter
-    override fun setCaptions(mode: CaptionMode) {
+    /** true while subtitles come from the playing film instead of the microphone */
+    var captionsFromMedia = false; private set
+
+    override fun setCaptions(mode: CaptionMode, media: Boolean) {
         val st = SpaceState
         if (mode != CaptionMode.OFF && !hasMic()) { st.notify("Phụ đề", "Cần quyền micro", Colors.AMBER, 3.0); return }
         if (prompter != null && mode != CaptionMode.OFF) setPrompter(false)
+        MediaCaptions.stop(); voice.stopContinuous()
         st.captionMode = mode
         captions.clear(); captionsVersion++
-        if (mode == CaptionMode.OFF) { voice.stopContinuous(); st.notify("Phụ đề", "tắt", Colors.CYAN, 1.5); return }
+        captionsFromMedia = false
+        if (mode == CaptionMode.OFF) { st.notify("Phụ đề", "tắt", Colors.CYAN, 1.5); return }
+        if (media) { startMediaCaptions(mode); return }
         if (mode.translateTo != null && !st.llmReady) st.notify("Phiên dịch", "Cần LLM để dịch — tạm chỉ hiện phụ đề gốc", Colors.AMBER, 4.0)
         else st.notify(mode.title, "Đang nghe… (lần đầu tải model ${mode.lang})", Colors.CYAN, 2.5)
         voice.startContinuous(mode.lang,
             onPartial = { t -> captions.onPartial(t); captionsVersion++ },
-            onFinal = { t ->
-                val line = captions.onFinal(t); captionsVersion++
-                val to = mode.translateTo
-                if (line != null && to != null && st.llmReady) {
-                    AiClient.translate(line.text, mode.lang, to) { r -> r.onSuccess { line.translation = it.trim(); captionsVersion++ } }
-                }
-            })
+            onFinal = { t -> onCaptionFinal(mode, t) })
+    }
+
+    private fun onCaptionFinal(mode: CaptionMode, t: String) {
+        val st = SpaceState
+        val line = captions.onFinal(t); captionsVersion++
+        val to = mode.translateTo
+        if (line != null && to != null && st.llmReady) {
+            AiClient.translate(line.text, mode.lang, to) { r -> r.onSuccess { line.translation = it.trim(); captionsVersion++ } }
+        }
+    }
+
+    /** subtitles from the film's own sound (needs the screen-capture consent; Android 10+) */
+    private fun startMediaCaptions(mode: CaptionMode) {
+        val st = SpaceState
+        if (!MediaCaptions.supported) { st.notify("Phụ đề phim", "Cần Android 10 trở lên — dùng phụ đề qua micro", Colors.AMBER, 4.0); return }
+        val go = {
+            val p = MirrorController.current
+            if (p == null) st.notify("Phụ đề phim", "Chưa được cấp quyền thu màn hình/âm thanh", Colors.AMBER, 3.0)
+            else voice.ensureModel(mode.lang) { ok ->
+                val m = voice.model(mode.lang)
+                if (!ok || m == null) { st.notify("Phụ đề phim", "Chưa tải được model ${mode.lang}", Colors.RED, 3.0); return@ensureModel }
+                captionsFromMedia = true
+                st.notify("🎬 ${mode.title}", "Nghe tiếng phim (không phải micro)", Colors.CYAN, 3.0)
+                MediaCaptions.start(p, m,
+                    onPartial = { t -> captions.onPartial(t); captionsVersion++ },
+                    onFinal = { t -> onCaptionFinal(mode, t) })
+            }
+        }
+        if (MirrorController.active) { go(); return }
+        val req = mirrorRequester
+        if (req == null) { st.notify("Phụ đề phim", "Mở app trên điện thoại để cho phép thu âm thanh phim", Colors.AMBER, 4.0); return }
+        st.notify("Phụ đề phim", "Điện thoại sẽ hỏi quyền ghi màn hình — chọn Cho phép (để nghe tiếng phim)", Colors.CYAN, 4.0)
+        req { go() }
     }
 
     // ------------------------------------------------------------------ teleprompter
@@ -222,6 +255,14 @@ object Assistant : SpaceState.Controller {
     override fun replyNotif(text: String, key: String?) { PhoneNotifs.reply(app, text, key) }
     override fun setDesktopSite(on: Boolean) { SpaceHost.space?.setDesktopFocused(on) }
     override fun media(action: vn.jiner.xrealspace.core.MediaAction, seconds: Int) { MediaControl.act(app, action, seconds) }
+
+    /** set by MainActivity: shows the phone's file picker (needs an Activity) */
+    var docPicker: (() -> Unit)? = null
+    override fun openDoc() {
+        val p = docPicker
+        if (p != null) { p(); SpaceState.notify("Mở tài liệu", "Chọn file PDF / EPUB trên điện thoại", Colors.CYAN, 3.0) }
+        else app.startActivity(Intent(app, MainActivity::class.java).setAction(MainActivity.ACTION_OPEN_DOC).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 
     /** Nod on a message pop-up: listen once, send what was said as the reply. */
     fun replyByVoice(key: String) {

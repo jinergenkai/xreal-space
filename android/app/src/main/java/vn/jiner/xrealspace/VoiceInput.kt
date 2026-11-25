@@ -59,6 +59,9 @@ class VoiceInput(private val ctx: Context, private val onCommandText: (String) -
     // ------------------------------------------------------------------ models
     fun ensureModel(done: (Boolean) -> Unit) = ensureModel("vi", done)
 
+    /** a loaded model (after ensureModel), for recognizers fed by other audio sources */
+    fun model(lang: String): Model? = models[lang]
+
     /** Downloads (once) and loads a Vosk model for [lang]. */
     fun ensureModel(lang: String, done: (Boolean) -> Unit) {
         if (models.containsKey(lang)) { done(true); return }

@@ -523,4 +523,79 @@ class CoreTest {
         assertEquals("150 mét nữa, rẽ trái vào Lê Lợi", Speech.turn(step, 150.0))
         assertEquals(SpeakMode.RIDING, SpeakMode.OFF.next())
     }
+
+    // ---------------------------------------------------------------- 0.9: docs, timer, weather, notes, agenda, tutorial
+    @Test fun docNavSlicesPortraitPages() {
+        val a4 = 297.0 / 210.0                               // 1.414: an A4 page on a 16:9 panel
+        val nav = DocNav({ if (it == 2) 0.5 else a4 }, 3)
+        assertEquals(3, nav.slices(0)); assertEquals(1, nav.slices(2))       // landscape page = 1 slice
+        assertEquals(0.0, nav.sliceTop(), 1e-9)
+        assertTrue(nav.next()); assertTrue(nav.next()); assertEquals(2, nav.slice)
+        assertEquals((a4 - 0.5625) / a4, nav.sliceTop(), 1e-9)                // last slice shows the bottom
+        assertTrue(nav.next()); assertEquals(1, nav.page); assertEquals(0, nav.slice)
+        assertTrue(nav.prev()); assertEquals(0, nav.page); assertEquals(2, nav.slice)
+        nav.go(2); assertFalse(nav.next())                                    // end of document
+        nav.go(99); assertEquals(2, nav.page); nav.go(0); assertFalse(nav.prev())
+        assertEquals("Trang 1/3 · phần 1/3", nav.label())
+    }
+
+    @Test fun epubSpineFromOpf() {
+        assertEquals("OEBPS/content.opf", Epub.opfPath("""<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>"""))
+        val opf = """<package><metadata><dc:title>Dế Mèn</dc:title></metadata><manifest>
+            <item id="c2" href="Text/ch%202.xhtml" media-type="application/xhtml+xml"/>
+            <item id="css" href="style.css" media-type="text/css"/>
+            <item href="Text/ch1.xhtml" id="c1" media-type="application/xhtml+xml"/></manifest>
+            <spine toc="ncx"><itemref idref="c1"/><itemref idref="css"/><itemref idref="c2" linear="yes"/></spine></package>"""
+        assertEquals(listOf("Text/ch1.xhtml", "Text/ch 2.xhtml"), Epub.spine(opf))
+        assertEquals("Dế Mèn", Epub.title(opf))
+    }
+
+    @Test fun timerWeatherNotesAgenda() {
+        val c = Countdown("Pomodoro", 25 * 60_000L, 1_000)
+        assertEquals("25:00", c.text(1_000)); assertEquals("24:59", c.text(2_000)); assertFalse(c.done(2_000)); assertTrue(c.done(1_501_000))
+        val w = Weather.parse("""{"current":{"temperature_2m":31.4,"weather_code":80},"daily":{"temperature_2m_max":[33.0],"temperature_2m_min":[25.2],"precipitation_probability_max":[70]}}""")!!
+        assertEquals("🌧 31°", w.short()); assertEquals("Mưa rào, 31°C · hôm nay 25–33° · khả năng mưa 70%", w.long())
+        assertNull(Weather.parse("{}"))
+        assertTrue(Weather.url(10.77, 106.7).contains("latitude=10.7700&longitude=106.7000"))
+        val nb = NoteBook(); assertNull(nb.add("  ", 0)); nb.add("mua sữa.", 1); nb.add("gọi anh Khoa", 2)
+        assertEquals("Gọi anh Khoa", nb.recent()[0].text); assertEquals("Mua sữa", nb.recent()[1].text)
+        val now = 10 * 3_600_000L
+        val ev = listOf(CalEvent("Họp", now + 8 * 60_000, now + 68 * 60_000, false), CalEvent("Sinh nhật", 0, 0, true),
+            CalEvent("Đã xong", now - 7_200_000, now - 3_600_000, false), CalEvent("Chiều", now + 4 * 3_600_000, now + 5 * 3_600_000, false))
+        assertEquals(listOf("Sinh nhật", "Họp", "Chiều"), Agenda.upcoming(ev, now).map { it.title })
+        val due = Agenda.dueReminder(ev, now, emptySet())!!; assertEquals("Họp", due.title)
+        assertNull(Agenda.dueReminder(ev, now, setOf(Agenda.key(due))))              // announced once
+    }
+
+    @Test fun tutorialAdvancesOnlyOnTheRightAction() {
+        val t = Tutorial()
+        assertEquals(Tutorial.Step.RECENTER, t.step); assertFalse(t.on(Tutorial.Event.CLICK))
+        assertTrue(t.on(Tutorial.Event.RECENTER)); assertTrue(t.on(Tutorial.Event.LOOK)); assertEquals("3/5", t.progress())
+        t.on(Tutorial.Event.CLICK); t.on(Tutorial.Event.VOICE); assertFalse(t.done); t.on(Tutorial.Event.NOD); assertTrue(t.done)
+        val u = Tutorial(); u.skip(); assertTrue(u.done); assertNull(u.step)
+    }
+
+    @Test fun parseExtrasCommands() {
+        val P = VoiceCommands::parse
+        assertEquals(VoiceCommands.Cmd.OpenDoc, P("mở tài liệu"))
+        assertEquals(VoiceCommands.Cmd.DocPage(step = 1), P("trang sau"))
+        assertEquals(VoiceCommands.Cmd.DocPage(step = -1), P("trang trước"))
+        assertEquals(VoiceCommands.Cmd.DocPage(page = 12), P("trang 12"))
+        assertEquals(VoiceCommands.Cmd.Timer(25, "Pomodoro"), P("bắt đầu pomodoro"))
+        assertEquals(VoiceCommands.Cmd.Timer(10, "Hẹn giờ"), P("hẹn giờ 10 phút"))
+        assertEquals(VoiceCommands.Cmd.Timer(60, "Hẹn giờ"), P("hẹn giờ 1 giờ"))
+        assertEquals(VoiceCommands.Cmd.Timer(5, "Nghỉ"), P("nghỉ 5 phút"))
+        assertEquals(VoiceCommands.Cmd.TimerStop, P("dừng hẹn giờ"))
+        assertEquals(VoiceCommands.Cmd.Note("mua sữa cho mẹ"), P("ghi chú mua sữa cho mẹ"))
+        assertEquals(VoiceCommands.Cmd.ReadNotes, P("đọc ghi chú"))
+        assertEquals(VoiceCommands.Cmd.Agenda, P("lịch hôm nay"))
+        assertEquals(VoiceCommands.Cmd.WeatherNow, P("thời tiết"))
+        assertEquals(VoiceCommands.Cmd.TutorialCmd(true), P("xem hướng dẫn"))
+        assertEquals(VoiceCommands.Cmd.TutorialCmd(false), P("bỏ qua hướng dẫn"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.EN_TO_VI, media = true), P("dịch phim"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.VI, media = true), P("phụ đề phim tiếng Việt"))
+        assertEquals(VoiceCommands.Cmd.Captions(CaptionMode.VI), P("phụ đề"))                    // microphone, as before
+        assertEquals(VoiceCommands.Cmd.Navigate("Chợ Lớn", "car"), P("chỉ đường tới Chợ Lớn"))      // "hướng dẫn" doesn't steal it
+        assertEquals(VoiceCommands.Cmd.Media(MediaAction.PAUSE), P("dừng phim"))                  // not captions
+    }
 }

@@ -16,6 +16,7 @@ import android.webkit.WebResourceResponse
 import vn.jiner.xrealspace.core.AdFilter
 import vn.jiner.xrealspace.core.ResumeStore
 import vn.jiner.xrealspace.core.Stereo
+import vn.jiner.xrealspace.core.Tutorial
 import android.os.Build
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -79,6 +80,10 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
 
         const val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+        /** white pages -> light text on black (black is see-through on the glasses, white is blinding) */
+        val INVERT = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(floatArrayOf(
+            -0.9f, 0f, 0f, 0f, 235f, 0f, -0.9f, 0f, 0f, 235f, 0f, 0f, -0.9f, 0f, 235f, 0f, 0f, 0f, 1f, 0f)))
+
         fun EMPTY_RESPONSE() = WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
 
         /** dark mode for old Android (< 10): invert the page, re-invert media */
@@ -131,12 +136,16 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         /** a panel showing the phone screen (MediaProjection) instead of a web page */
         val isMirror = SpaceState.config.screens.getOrNull(index)?.url == Assistant.MIRROR_URL
         var mirrorView: TextureView? = null
+        /** a PDF / EPUB opened from the phone ("doc:<uri>") */
+        val docUri = DocView.uriOf(SpaceState.config.screens.getOrNull(index)?.url ?: "")
+        var doc: DocView? = null
+        var docImage: android.widget.ImageView? = null
         val border = GradientDrawable().apply { setColor(Color.BLACK); setStroke(BORDER, Colors.BORDER); cornerRadius = 10f }
         /** content size in px (web: 1280x720; mirror: phone aspect, portrait) */
         val widthPx = if (isMirror) 720 else BASE_W
         var heightPx = if (isMirror) (720f * MirrorController.phoneH / MirrorController.phoneW).toInt() else BASE_W * 9 / 16
         /** the view that receives input: the WebView or the mirror */
-        val content: View get() = mirrorView ?: web
+        val content: View get() = mirrorView ?: docImage ?: web
         var focused = false
             set(v) { if (v != field) { field = v; border.setStroke(BORDER, if (v) Colors.BORDER_FOCUS else Colors.BORDER) } }
         /** last time (ms) the panel was on screen, for pausing panels you are not looking at */
@@ -180,6 +189,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                     return s != "http" && s != "https" // keep web navigation inside the panel, block intent:// etc.
                 }
                 override fun onPageFinished(v: WebView, url: String) {
+                    (doc as? EpubDoc)?.let { it.onChapterLoaded(); return }
                     SpaceState.config.screens.getOrNull(index)?.let { if (it.url != url) { it.url = url } }
                     v.evaluateJavascript(INPUT_HOOK_JS, null)
                     v.evaluateJavascript(RESUME_JS, null)
@@ -219,6 +229,21 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 }
                 mirrorView = tv
                 frame.addView(tv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            } else if (docUri != null) {
+                if (DocView.isEpub(context, docUri)) {
+                    frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                    doc = EpubDoc(context, docUri, web)
+                } else {
+                    val iv = android.widget.ImageView(context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.FIT_XY
+                        setBackgroundColor(Color.BLACK)
+                        if (SpaceState.darkDocs) colorFilter = INVERT
+                    }
+                    docImage = iv
+                    frame.addView(iv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                    doc = PdfDoc(context, docUri) { bmp -> iv.setImageBitmap(bmp) }
+                }
+                DocPositions.lastDoc = DocView.PREFIX + docUri
             } else {
                 frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
                 SpaceState.config.screens.getOrNull(index)?.let { web.loadUrl(it.url) }
@@ -304,6 +329,15 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         background = GradientDrawable().apply { setColor(0xF2000000.toInt()); setStroke(2, Colors.CYAN); cornerRadius = 18f }
         visibility = GONE
     }
+    /** first-run tutorial card, head-locked near the top */
+    private val tutorialView = TextView(ctx).apply {
+        setTextColor(Colors.WHITE); textSize = 19f; setPadding(30, 22, 30, 22); setLineSpacing(5f, 1.0f)
+        background = GradientDrawable().apply { setColor(0xF2001A2A.toInt()); setStroke(3, Colors.CYAN); cornerRadius = 20f }
+        visibility = GONE
+    }
+    private var tutorialShown = -1
+    private var lastFocus = -2
+
     private val captionView = TextView(ctx).apply {
         setTextColor(Colors.WHITE); textSize = 22f; setPadding(26, 14, 26, 14); gravity = Gravity.CENTER; setLineSpacing(4f, 1.0f)
         background = GradientDrawable().apply { setColor(0xF2000000.toInt()); cornerRadius = 16f }
@@ -344,6 +378,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         mapView.pivotX = 0f; mapView.pivotY = 0f
         addView(info, LayoutParams(InfoView.W, InfoView.H))
         addView(toastView, LayoutParams(ToastView.W, ToastView.H)); toastView.visibility = GONE
+        addView(tutorialView, LayoutParams(860, LayoutParams.WRAP_CONTENT))
         addView(status, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(wizardText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         slotLabels.forEach { addView(it, LayoutParams(220, 124)); it.pivotX = 0f; it.pivotY = 0f }
@@ -359,7 +394,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     private fun rebuildPanels() {
-        panels.forEach { removeView(it.frame); it.web.destroy() }
+        panels.forEach { removeView(it.frame); it.doc?.close(); it.web.destroy() }
         panels.clear()
         SpaceState.config.screens.indices.forEach { i ->
             val p = Panel(i)
@@ -370,7 +405,12 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         SpaceState.pendingLoads.clear()
     }
 
-    fun start() { if (!running) { running = true; lastFrameNs = 0; SpaceHost.space = this; Choreographer.getInstance().postFrameCallback(this) } }
+    fun start() {
+        if (running) return
+        running = true; lastFrameNs = 0; SpaceHost.space = this; Choreographer.getInstance().postFrameCallback(this)
+        // first time on the glasses: teach the 5 basic moves
+        if (!onPhoneScreen && !SpaceState.tutorialDone && SpaceState.tutorial == null) postDelayed({ if (running) SpaceState.startTutorial() }, 2500)
+    }
     fun stop() { running = false; if (SpaceHost.space === this) SpaceHost.space = null; Choreographer.getInstance().removeFrameCallback(this) }
 
     fun destroy() { stop(); exitFullscreen(); panels.forEach { it.web.destroy() }; panels.clear() }
@@ -400,7 +440,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         focalPx = Projection.focalPx(h, st.config.fovVDeg)
         if (builtVersion != st.panelsVersion) rebuildPanels()
         if (st.pendingLoads.isNotEmpty()) {
-            for ((i, url) in st.pendingLoads) panels.getOrNull(i)?.web?.loadUrl(url)
+            for ((i, url) in st.pendingLoads) panels.getOrNull(i)?.takeIf { it.docUri == null }?.web?.loadUrl(url)
             st.pendingLoads.clear()
         }
         val tracker = st.tracker
@@ -458,6 +498,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 if (d < bestD && d < halfW) { bestD = d; best = i }
             }
         }
+        if (best >= 0 && best != lastFocus && lastFocus != -2) st.tutorialEvent(Tutorial.Event.LOOK)
+        lastFocus = best
         st.focusedPanel = best
         panels.forEachIndexed { i, p -> p.focused = i == best }
 
@@ -474,7 +516,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         if (M != null && wz == null) {
             val g = gestures.update(Mat3.mulV(M, tracker.lastGyro), now)
             when (g) {
-                HeadGestures.Gesture.NOD -> if (st.grabbedPanel >= 0) st.toggleGrab() else {
+                HeadGestures.Gesture.NOD -> if (st.tutorial?.step == Tutorial.Step.NOD) st.tutorialEvent(Tutorial.Event.NOD)
+                else if (st.grabbedPanel >= 0) st.toggleGrab() else {
                     val t = st.toast
                     val key = st.toastNotifKey
                     if (t != null && t.actionable && key != null) Assistant.replyByVoice(key)
@@ -495,6 +538,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             lastInfo = SystemClock.uptimeMillis()
             info.mode = when { st.walkMode -> "ĐI BỘ"; st.headLocked -> "HEAD-LOCKED"; else -> "WORLD-LOCKED" } +
                 if (onPhoneScreen) " · màn hình điện thoại" else ""
+            info.extra = Utilities.infoLine()
             info.refresh()
         }
         val t = st.toast
@@ -522,11 +566,23 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         }
         // assistant card (head-locked, lower centre)
         if (System.currentTimeMillis() < st.cardUntil && st.cardText.isNotEmpty()) {
-            if (card.visibility != VISIBLE) card.visibility = VISIBLE
+            if (card.visibility != VISIBLE) card.visibility = VISIBLE   // (tutorial card is drawn separately below)
             val txt = "${st.cardTitle}\n\n${st.cardText}"
             if (card.text.toString() != txt) card.text = txt
             card.x = w / 2f - 410f; card.y = h * 0.42f
         } else if (card.visibility != GONE) card.visibility = GONE
+        // tutorial
+        val tut = st.tutorial
+        if (tut?.step != null) {
+            if (tutorialShown != st.tutorialVersion) {
+                tutorialShown = st.tutorialVersion
+                val stp = tut.step!!
+                tutorialView.text = "Hướng dẫn ${tut.progress()} · ${stp.title}\n${stp.how}\n(nói \"bỏ qua hướng dẫn\" để bỏ qua)"
+            }
+            if (tutorialView.visibility != VISIBLE) tutorialView.visibility = VISIBLE
+            tutorialView.x = w / 2f - 430f; tutorialView.y = h * 0.10f
+            eyeShift[tutorialView] = 0f
+        } else if (tutorialView.visibility != GONE) tutorialView.visibility = GONE
         // live captions (head-locked, bottom)
         if (st.captionMode != vn.jiner.xrealspace.core.CaptionMode.OFF) {
             if (captionView.visibility != VISIBLE) captionView.visibility = VISIBLE
@@ -678,7 +734,9 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     /** Volume-key / remote click at the gaze dot (fullscreen: tap the middle = play/pause). */
-    fun clickAtGaze(): Boolean {
+    fun clickAtGaze(): Boolean = clickAtGaze0().also { if (it) SpaceState.tutorialEvent(Tutorial.Event.CLICK) }
+
+    private fun clickAtGaze0(): Boolean {
         fullView?.let { fv ->
             touchDownTime = SystemClock.uptimeMillis()
             sendTo(fv, MotionEvent.ACTION_DOWN, fv.width / 2f, fv.height / 2f); sendTo(fv, MotionEvent.ACTION_UP, fv.width / 2f, fv.height / 2f)
@@ -697,9 +755,28 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     /** Two-finger swipe left: leave fullscreen, else go back in the page you look at. */
-    fun back() { if (fullView != null) exitFullscreen() else focusedWeb()?.let { if (it.canGoBack()) it.goBack() } }
+    fun back() {
+        if (fullView != null) { exitFullscreen(); return }
+        focusedDoc()?.let { it.step(-1); docHint(it); return }
+        focusedWeb()?.let { if (it.canGoBack()) it.goBack() }
+    }
 
-    fun forward() { focusedWeb()?.let { if (it.canGoForward()) it.goForward() } }
+    fun forward() {
+        focusedDoc()?.let { it.step(1); docHint(it); return }
+        focusedWeb()?.let { if (it.canGoForward()) it.goForward() }
+    }
+
+    /** the document you look at, else the only/first open document */
+    fun focusedDoc(): DocView? = panels.getOrNull(SpaceState.focusedPanel)?.doc ?: panels.firstNotNullOfOrNull { it.doc }
+
+    private fun docHint(d: DocView) = postDelayed({ SpaceState.notify("📖", d.label, Colors.GREY, 1.2) }, 250)
+
+    /** voice: "trang sau" / "trang trước" / "trang 12" */
+    fun docPage(step: Int, page: Int?): Boolean {
+        val d = focusedDoc() ?: return false
+        if (page != null) d.goPage(page) else d.step(if (step >= 0) 1 else -1)
+        docHint(d); return true
+    }
 
     /** Phone keyboard -> the focused text field of the page (works with React-style inputs too). */
     fun setFocusedInputValue(value: String) {

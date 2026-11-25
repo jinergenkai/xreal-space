@@ -13,6 +13,7 @@ import vn.jiner.xrealspace.core.Mat3
 import vn.jiner.xrealspace.core.ScreenSpec
 import vn.jiner.xrealspace.core.SlotGrid
 import vn.jiner.xrealspace.core.SpaceConfig
+import vn.jiner.xrealspace.core.Tutorial
 import vn.jiner.xrealspace.core.VoiceCommands
 import vn.jiner.xrealspace.core.WakeWord
 import vn.jiner.xrealspace.core.Workspaces
@@ -81,6 +82,8 @@ object SpaceState {
     var rideSafety = true
     /** film sites: block ad hosts, pop-up windows and redirects to other sites (default on) */
     var adBlock = true
+    /** PDF pages shown inverted (light text on black) — easier on the glasses */
+    var darkDocs = true
     /** read notifications / turns out loud: off, only while riding or navigating, always */
     var speakMode = vn.jiner.xrealspace.core.SpeakMode.RIDING
     /** draw real 3D (one image per eye) when the glasses are in SBS mode */
@@ -107,13 +110,15 @@ object SpaceState {
         fun mirrorOff()
         fun phoneBack(): Boolean
         fun phoneHome(): Boolean
-        fun setCaptions(mode: CaptionMode)
+        fun setCaptions(mode: CaptionMode, media: Boolean = false)
         fun setPrompter(on: Boolean?)
         /** reply to a phone notification (key null = newest one with a reply box) */
         fun replyNotif(text: String, key: String?)
         /** switch the page you're looking at to its desktop / mobile layout */
         fun setDesktopSite(on: Boolean)
         fun media(action: vn.jiner.xrealspace.core.MediaAction, seconds: Int)
+        /** pick a PDF / EPUB on the phone */
+        fun openDoc()
     }
     var controller: Controller? = null
 
@@ -151,6 +156,8 @@ object SpaceState {
         if (prefsCtx != null) return
         prefsCtx = ctx.applicationContext
         CrashLog.install(ctx)
+        DocPositions.init(ctx)
+        Utilities.init(ctx)
         Speaker.init(ctx)
         config = load(ctx)
         loadSettings(ctx)
@@ -194,7 +201,40 @@ object SpaceState {
     fun showGrid(secs: Double = 6.0) { gridUntil = System.currentTimeMillis() + (secs * 1000).toLong() }
 
     // ------------------------------------------------------------------ commands (keys, buttons, voice, gestures)
-    fun recenter() { recenterRequested = true; tracker.reset() }
+    fun recenter() { recenterRequested = true; tracker.reset(); tutorialEvent(Tutorial.Event.RECENTER) }
+
+    // ------------------------------------------------------------------ first-run tutorial (on the glasses)
+    var tutorial: Tutorial? = null; private set
+    var tutorialDone = false
+    var tutorialVersion = 0; private set
+
+    fun startTutorial() {
+        tutorial = Tutorial(); tutorialVersion++
+        val s = tutorial!!.step!!
+        notify("Hướng dẫn", "5 bước, mỗi bước làm thử là qua", Colors.CYAN, 3.0)
+        Speaker.say("Hướng dẫn. ${s.how}", flush = true, force = true)
+    }
+
+    fun skipTutorial() {
+        tutorial = null; tutorialDone = true; tutorialVersion++; saveSettings()
+        notify("Hướng dẫn", "Đã bỏ qua — nói \"xem hướng dẫn\" để xem lại", Colors.GREY, 3.0)
+    }
+
+    /** an action the user just did; finishes the current step if it is the right one */
+    fun tutorialEvent(e: Tutorial.Event) {
+        val t = tutorial ?: return
+        if (!t.on(e)) return
+        tutorialVersion++
+        val next = t.step
+        if (next == null) {
+            tutorial = null; tutorialDone = true; saveSettings()
+            notify("🎉 Xong hướng dẫn", "Nói \"xem hướng dẫn\" bất cứ lúc nào để xem lại", Colors.GREEN, 5.0)
+            Speaker.say("Xong rồi. Chúc bạn dùng vui", flush = true, force = true)
+        } else {
+            notify("✓ Đúng rồi", "Tiếp: ${next.title}", Colors.GREEN, 1.8)
+            Speaker.say(next.how, flush = true, force = true)
+        }
+    }
 
     fun toggleWalk() {
         walkMode = !walkMode
@@ -250,7 +290,8 @@ object SpaceState {
         val name = title?.takeIf { it.isNotBlank() }?.take(24) ?: hostOf(u)
         val existing = config.screens.indexOfFirst { SlotGrid.slotOf(it) == slot }
         // web <-> phone mirror is a different kind of panel: rebuild instead of just loading a URL
-        if (existing >= 0 && config.screens[existing].url.startsWith("mirror:") != u.startsWith("mirror:")) {
+        fun kind(x: String) = when { x.startsWith("mirror:") -> 1; x.startsWith("doc:") -> 2; else -> 0 }
+        if (existing >= 0 && (kind(config.screens[existing].url) != kind(u) || kind(u) == 2)) {
             config.screens.removeAt(existing)
             config.screens.add(SlotGrid.spec(slot, name, u).also { if (u.startsWith("mirror:")) it.widthM = 0.5 })
             panelsVersion++; save(); showGrid(3.0); notify("Ô $slot", name, Colors.GREEN, 2.0); return
@@ -322,6 +363,7 @@ object SpaceState {
     }
 
     fun execute(cmd: VoiceCommands.Cmd) {
+        if (cmd !is VoiceCommands.Cmd.Unknown && cmd !is VoiceCommands.Cmd.TutorialCmd) tutorialEvent(Tutorial.Event.VOICE)
         when (cmd) {
             VoiceCommands.Cmd.Recenter -> recenter()
             is VoiceCommands.Cmd.Walk -> if (cmd.on == null || cmd.on != walkMode) toggleWalk()
@@ -336,6 +378,15 @@ object SpaceState {
             is VoiceCommands.Cmd.Navigate -> Navigation.start(cmd.dest, cmd.profile)
             VoiceCommands.Cmd.StopNav -> Navigation.stop()
             is VoiceCommands.Cmd.Media -> controller?.media(cmd.action, cmd.seconds)
+            VoiceCommands.Cmd.OpenDoc -> controller?.openDoc()
+            is VoiceCommands.Cmd.Timer -> Utilities.startTimer(cmd.minutes, cmd.label)
+            VoiceCommands.Cmd.TimerStop -> Utilities.stopTimer()
+            is VoiceCommands.Cmd.Note -> Utilities.addNote(cmd.text)
+            VoiceCommands.Cmd.ReadNotes -> Utilities.showNotes()
+            VoiceCommands.Cmd.Agenda -> Utilities.showAgenda()
+            VoiceCommands.Cmd.WeatherNow -> Utilities.showWeather()
+            is VoiceCommands.Cmd.TutorialCmd -> if (cmd.start) startTutorial() else skipTutorial()
+            is VoiceCommands.Cmd.DocPage -> if (SpaceHost.space?.docPage(cmd.step, cmd.page) != true) notify("Tài liệu", "Chưa mở tài liệu nào — nói \"mở tài liệu\"", Colors.AMBER, 3.0)
             is VoiceCommands.Cmd.Speak -> setSpeak(cmd.mode)
             is VoiceCommands.Cmd.AdBlock -> { adBlock = cmd.on; saveSettings(); notify("Chặn quảng cáo", if (cmd.on) "bật" else "tắt", Colors.CYAN, 2.0) }
             is VoiceCommands.Cmd.DesktopSite -> controller?.setDesktopSite(cmd.on)
@@ -349,7 +400,7 @@ object SpaceState {
             is VoiceCommands.Cmd.LaunchApp -> controller?.launchApp(cmd.name)
             is VoiceCommands.Cmd.Mirror -> controller?.mirror(cmd.slot)
             VoiceCommands.Cmd.MirrorOff -> controller?.mirrorOff()
-            is VoiceCommands.Cmd.Captions -> controller?.setCaptions(cmd.mode)
+            is VoiceCommands.Cmd.Captions -> controller?.setCaptions(cmd.mode, cmd.media)
             is VoiceCommands.Cmd.Prompter -> controller?.setPrompter(cmd.on)
             VoiceCommands.Cmd.Back -> {
                 val onMirror = config.screens.getOrNull(focusedPanel)?.url == Assistant.MIRROR_URL
@@ -375,7 +426,7 @@ object SpaceState {
 
     fun normalizeUrl(s: String): String {
         val t = s.trim()
-        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:") || t.startsWith("mirror:")) return t
+        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:") || t.startsWith("mirror:") || t.startsWith("doc:")) return t
         if (t.contains('.') && !t.contains(' ')) return "https://$t"
         return VoiceCommands.searchUrl(t)
     }
@@ -406,7 +457,8 @@ object SpaceState {
             .put("followMode", followMode.name).put("darkWeb", darkWeb).put("pauseOffscreen", pauseOffscreen).put("cinemaScale", cinemaScale)
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("rideSafety", rideSafety)
-            .put("adBlock", adBlock).put("speakMode", speakMode.name)
+            .put("tutorialDone", tutorialDone)
+            .put("adBlock", adBlock).put("darkDocs", darkDocs).put("speakMode", speakMode.name)
             .put("stereo3d", stereo3d).put("stereoConvergeM", stereoConvergeM)
             .put("resume", org.json.JSONObject().apply { resume.entries().forEach { (k, v) -> put(k, v) } })
             .put("wakeEnabled", wakeEnabled).put("wakePhrases", wakePhrases.joinToString("|"))
@@ -428,7 +480,8 @@ object SpaceState {
             sttEngine = runCatching { SttEngine.valueOf(o.optString("sttEngine", sttEngine.name)) }.getOrDefault(sttEngine)
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)
             rideSafety = o.optBoolean("rideSafety", rideSafety)
-            adBlock = o.optBoolean("adBlock", adBlock)
+            tutorialDone = o.optBoolean("tutorialDone", tutorialDone)
+            adBlock = o.optBoolean("adBlock", adBlock); darkDocs = o.optBoolean("darkDocs", darkDocs)
             speakMode = runCatching { vn.jiner.xrealspace.core.SpeakMode.valueOf(o.optString("speakMode", speakMode.name)) }.getOrDefault(speakMode)
             stereo3d = o.optBoolean("stereo3d", stereo3d); stereoConvergeM = o.optDouble("stereoConvergeM", stereoConvergeM)
             o.optJSONObject("resume")?.let { r -> resume.load(r.keys().asSequence().associateWith { r.getDouble(it) }) }

@@ -36,6 +36,8 @@ object MirrorController {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     val active get() = projection != null
+    /** the granted projection (also used to capture playback audio for film subtitles) */
+    val current: MediaProjection? get() = projection
     var phoneW = 1080; private set
     var phoneH = 2400; private set
 

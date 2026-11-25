@@ -61,6 +61,8 @@ class MainActivity : Activity(), TouchpadView.Host {
     companion object {
         const val ACTION_REQUEST_MIRROR = "vn.jiner.xrealspace.REQUEST_MIRROR"
         private const val REQ_MIRROR = 42
+        const val ACTION_OPEN_DOC = "vn.jiner.xrealspace.OPEN_DOC"
+        private const val REQ_DOC = 43
         /** true while this activity is in front (the Accessibility key filter only acts when it is NOT) */
         @Volatile var inForeground = false; private set
     }
@@ -114,6 +116,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         Assistant.init(this)
         Assistant.mirrorRequester = { after -> requestMirror(after) }
+        Assistant.docPicker = { pickDoc() }
         buildUi()
         setupRemote()
         dm.registerDisplayListener(displayListener, ui)
@@ -127,6 +130,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     private fun handleIntent(i: Intent?) {
         if (i?.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) connectGlasses()
         if (i?.action == ACTION_REQUEST_MIRROR) { val slot = i.getIntExtra("slot", 4); requestMirror { Assistant.ensureMirrorPanel(slot) } }
+        if (i?.action == ACTION_OPEN_DOC) pickDoc()
     }
 
     override fun onStart() {
@@ -156,6 +160,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         dm.unregisterDisplayListener(displayListener)
         Sensors.listener = null   // USB/IMU live in Sensors (process-wide) and keep running for GlassesService
         Assistant.mirrorRequester = null
+        Assistant.docPicker = null
         phoneSpace?.destroy()
         super.onDestroy()
     }
@@ -254,6 +259,20 @@ class MainActivity : Activity(), TouchpadView.Host {
     private fun summarizeFocused() = Assistant.summarizeFocused()
 
     // ------------------------------------------------------------------ phone mirror (MediaProjection consent needs an Activity)
+    private fun pickDoc() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", "application/epub+zip"))
+        @Suppress("DEPRECATION") startActivityForResult(i, REQ_DOC)
+    }
+
+    /** put a picked document on the glasses (slot 5 = straight ahead) and keep access after reboot */
+    private fun openPickedDoc(uri: android.net.Uri) {
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+        val name = DocView.displayName(this, uri)
+        SpaceState.place(5, DocView.PREFIX + uri, name.substringBeforeLast('.'))
+        SpaceState.notify("📖 $name", "Vuốt 2 ngón trái/phải hoặc nói \"trang sau\" để lật", Colors.CYAN, 4.0)
+    }
+
     private fun requestMirror(after: (() -> Unit)?) {
         if (!GlassesService.canHost(this)) {
             SpaceState.notify("Màn hình điện thoại", "Cho phép \"Hiển thị trên ứng dụng khác\" để kính vẫn chạy khi mở app khác", Colors.AMBER, 5.0)
@@ -267,6 +286,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_DOC) { if (resultCode == RESULT_OK) data?.data?.let { openPickedDoc(it) }; return }
         if (requestCode != REQ_MIRROR) return
         if (resultCode != RESULT_OK || data == null) { SpaceState.notify("Màn hình điện thoại", "Đã huỷ", Colors.AMBER, 2.0); return }
         GlassesService.afterMirror = afterMirrorGrant; afterMirrorGrant = null
@@ -302,6 +322,7 @@ class MainActivity : Activity(), TouchpadView.Host {
             append("${mark(ControlService.instance != null)} Trợ năng — bấm vào app điện thoại từ kính, nút âm lượng ở mọi app\n")
             append("${mark(notif)} Thông báo — biểu tượng chạy nền\n")
             append("${mark(NotifListener.isEnabled(this@MainActivity))} Đọc thông báo ĐT — tin Zalo/Messenger hiện lên kính, gật đầu để trả lời\n")
+            append("${mark(Utilities.calendarAllowed)} Lịch — lịch hôm nay trên kính, nhắc trước 10 phút\n")
             append("${mark(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)} Vị trí — chỉ đo tốc độ: ẩn màn khi đi xe (không lưu, không gửi)\n")
             append("${mark(battery)} Không tối ưu pin — Xiaomi/Oppo/Samsung hay tự tắt app chạy nền")
             val maker = android.os.Build.MANUFACTURER.lowercase()
@@ -327,6 +348,7 @@ class MainActivity : Activity(), TouchpadView.Host {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
         super.onRequestPermissionsResult(code, perms, res)
         if (code == 1 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { afterMicGrant?.invoke() }
+        if (code == 4 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) Utilities.refreshCalendar()
         if (code == 3 && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) { Sensors.keepAlive(); if (usb.connected) Sensors.startSpeed() }
         refreshSetup()
         afterMicGrant = null
@@ -562,7 +584,8 @@ class MainActivity : Activity(), TouchpadView.Host {
         col.addView(row(btn("Micro") { withMic { refreshSetup() } }, btn("Hiện trên app khác") { openOverlaySettings() },
             btn("Trợ năng") { openAccessibilitySettings() }))
         col.addView(row(btn("Đọc thông báo ĐT") { NotifListener.openSettings(this) },
-            btn("Vị trí (an toàn)") { requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 3) }))
+            btn("Vị trí (an toàn)") { requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 3) },
+            btn("Lịch") { requestPermissions(arrayOf(Manifest.permission.READ_CALENDAR), 4) }))
         col.addView(row(btn("Thông báo") { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 2) },
             btn("Không tối ưu pin") { openBatterySettings() }))
 
@@ -645,6 +668,22 @@ class MainActivity : Activity(), TouchpadView.Host {
             hideKeyboard(); Navigation.start(q, profile)
         }
         col.addView(row(btn("🏍 Xe") { go("car") }, btn("🚲 Đạp") { go("bike") }, btn("🚶 Đi bộ") { go("foot") }, btn("Dừng") { Navigation.stop() }))
+
+        col.addView(label("Tài liệu & tiện ích"))
+        col.addView(row(btn("📖 Mở PDF/EPUB") { pickDoc() },
+            btn("Đọc tiếp") { DocPositions.lastDoc?.let { SpaceState.place(5, it, "Tài liệu") } ?: SpaceState.notify("Tài liệu", "Chưa mở tài liệu nào", Colors.AMBER, 2.0) },
+            btn("◀ Trang") { SpaceHost.space?.docPage(-1, null) }, btn("Trang ▶") { SpaceHost.space?.docPage(1, null) }))
+        col.addView(row(btn("🎓 Hướng dẫn trên kính") { SpaceState.startTutorial() }, btn("Bỏ qua hướng dẫn") { SpaceState.skipTutorial() }))
+        col.addView(row(btn("🍅 Pomodoro") { Utilities.startTimer(25, "Pomodoro") }, btn("⏱ Huỷ") { Utilities.stopTimer() },
+            btn("📅 Hôm nay") { Utilities.showAgenda() }, btn("☁ Thời tiết") { Utilities.showWeather() }))
+        col.addView(row(btn("📝 Xem ghi chú") { Utilities.showNotes() }, btn("Chia sẻ ghi chú") {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, "Ghi chú XREAL Space").putExtra(Intent.EXTRA_TEXT, Utilities.exportNotes()), "Chia sẻ ghi chú"))
+        }))
+        col.addView(TextView(this).apply {
+            text = "Nói: \"mở tài liệu\" · \"trang sau/trước\" · \"trang 12\" · \"pomodoro\" · \"hẹn giờ 10 phút\" · \"ghi chú gọi anh Khoa\" · \"đọc ghi chú\" · \"lịch hôm nay\" · \"thời tiết\""
+            setTextColor(Colors.GREY); textSize = 12f
+        })
 
         col.addView(label("Xem phim trên web & 3D"))
         fun adLabel() = "Chặn quảng cáo: ${if (SpaceState.adBlock) "BẬT" else "TẮT"}"
@@ -733,6 +772,8 @@ class MainActivity : Activity(), TouchpadView.Host {
             btn("English") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.EN) } }))
         col.addView(row(btn("Dịch Anh → Việt") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.EN_TO_VI) } },
             btn("Dịch Việt → Anh") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.VI_TO_EN) } }))
+        col.addView(row(btn("🎬 Phụ đề phim (tiếng phim)") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.VI, media = true) } },
+            btn("🎬 Dịch phim Anh → Việt") { withMic { Assistant.setCaptions(vn.jiner.xrealspace.core.CaptionMode.EN_TO_VI, media = true) } }))
 
         // ---------------------------------------------------------------- teleprompter
         col.addView(label("Teleprompter (chữ chạy theo giọng đọc)"))

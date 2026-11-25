@@ -206,9 +206,12 @@ class MapPanelView(ctx: Context) : View(ctx) {
 
 /** Head-locked info bar (clock, battery, mode) — top right. */
 class InfoView(ctx: Context) : View(ctx) {
-    companion object { const val W = 430; const val H = 92 }
+    companion object { const val W = 430; const val H = 124 }
 
     var mode = ""
+    /** weather · timer · next event (Utilities.infoLine) */
+    var extra = ""
+    private val fExtra = paint(Colors.WHITE, 22f)
     private val bg = paint(0xDC000000.toInt())
     private val fClock = paint(Colors.WHITE, 46f, true).apply { textAlign = Paint.Align.RIGHT }
     private val fSmall = paint(Colors.GREY, 22f)
@@ -221,7 +224,7 @@ class InfoView(ctx: Context) : View(ctx) {
 
     fun refresh() {
         val (pct, ac) = battery()
-        val k = "${hm.format(Date())}|$pct|$ac|$mode"
+        val k = "${hm.format(Date())}|$pct|$ac|$mode|$extra"
         if (k != key) { key = k; invalidate() }
     }
 
@@ -245,6 +248,7 @@ class InfoView(ctx: Context) : View(ctx) {
             c.drawText("$pct%" + if (ac) " · sạc" else "", bx + 66, by + 20, fSmall)
         }
         c.drawText(mode, bx, by + 60, fMode)
+        if (extra.isNotEmpty()) c.drawText(extra, bx, by + 94, fExtra)
     }
 }
 
