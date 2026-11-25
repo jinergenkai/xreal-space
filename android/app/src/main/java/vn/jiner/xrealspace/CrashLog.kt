@@ -37,24 +37,56 @@ object CrashLog {
                 val ts = SimpleDateFormat("dd/MM HH:mm:ss", Locale.US).format(Date())
                 val text = "Crash $ts on thread ${t.name}\nApp ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n\n$sw\n-- log --\n${SpaceState.recentLog(60)}"
                 file?.writeText(text)
-                exportToDownloads(text)
+                export("xreal-space-crash.txt", text)
             } catch (_: Throwable) {}
             prev?.uncaughtException(t, e)
         }
     }
 
-    /** copy to the public Download folder (Android 10+: no permission needed for our own file) */
-    private fun exportToDownloads(text: String) {
+    /**
+     * Copy a report where a PC can read it over USB (MTP):
+     *  1. Android/data/vn.jiner.xrealspace/files/<name>  (always works, no permission)
+     *  2. Download/<name> via MediaStore (Android 10+)
+     */
+    fun export(name: String, text: String) {
         val c = app ?: return
+        try { c.getExternalFilesDir(null)?.let { File(it, name).writeText(text) } } catch (_: Throwable) {}
         if (Build.VERSION.SDK_INT < 29) return
         try {
             val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, "xreal-space-crash.txt")
+                put(MediaStore.Downloads.DISPLAY_NAME, name)
                 put(MediaStore.Downloads.MIME_TYPE, "text/plain")
             }
             val uri = c.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
             c.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
         } catch (_: Throwable) {}
+    }
+
+    /**
+     * Our own logcat (an app may read its own process's lines without READ_LOGS). Taken at the next launch it
+     * usually still holds the previous run, including a native crash that never reached our Java handler.
+     */
+    fun ownLogcat(lines: Int = 1500): String = try {
+        val p = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", lines.toString()).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText(); p.waitFor(); out
+    } catch (e: Throwable) { "logcat unavailable: $e" }
+
+    /** report for a start that never finished: Java crash if we caught one, else the logcat errors */
+    fun lastStartReport(): String {
+        val crash = read()
+        val log = ownLogcat()
+        val errors = log.lines().filter { l -> Regex("""\s[EF]\s""").containsMatchIn(l) || "FATAL" in l || "AndroidRuntime" in l || "DEBUG" in l }
+            .takeLast(120).joinToString("\n")
+        val head = "App ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}"
+        val report = buildString {
+            append(head).append("\n\n")
+            if (crash.isNotEmpty()) append(crash).append("\n\n")
+            else append("Không bắt được lỗi Java: có thể app bị lỗi native (thư viện C) hoặc bị đóng trong lúc khởi động.\n\n")
+            append("-- logcat lỗi --\n").append(errors.ifEmpty { "(trống)" })
+        }
+        export("xreal-space-crash.txt", report)
+        export("xreal-space-logcat.txt", log)
+        return report
     }
 
     fun read(): String = try { file?.takeIf { it.exists() }?.readText() ?: "" } catch (_: Exception) { "" }

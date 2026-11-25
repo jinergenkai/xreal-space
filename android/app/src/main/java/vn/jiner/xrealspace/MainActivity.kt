@@ -111,7 +111,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
         // the last launch died while starting: show why, offer safe mode, before touching anything else
-        if (CrashLog.lastStartCrashed(this) && CrashLog.read().isNotEmpty()) { showCrashScreen(); return }
+        if (CrashLog.lastStartCrashed(this)) { showCrashScreen(); return }
         normalStart()
     }
 
@@ -121,11 +121,11 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     private fun showCrashScreen() {
         crashScreen = true
-        val text = CrashLog.read()
+        val text = CrashLog.lastStartReport()
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
         col.addView(TextView(this).apply { this.text = "XREAL Space bị lỗi ở lần mở trước"; textSize = 22f; setTextColor(Colors.AMBER) })
         col.addView(TextView(this).apply {
-            this.text = "Chụp màn hình này gửi cho người phát triển. File lỗi cũng nằm ở Download/xreal-space-crash.txt."
+            this.text = "Gửi file lỗi cho người phát triển. Cắm Beam vào PC, mở: Android/data/vn.jiner.xrealspace/files/ (hoặc Download/) → xreal-space-crash.txt và xreal-space-logcat.txt."
             textSize = 14f; setTextColor(Color.WHITE)
         })
         val go = { safe: Boolean ->
@@ -186,6 +186,7 @@ class MainActivity : Activity(), TouchpadView.Host {
 
     override fun onStop() {
         if (crashScreen) { super.onStop(); return }
+        CrashLog.markStarted(this)   // left the app normally before 8 s: not a crash
         started = false
         ui.removeCallbacks(ticker)
         if (!serviceHosted) voice.stopWake()   // service-hosted glasses keep listening while other apps are in front

@@ -35,6 +35,7 @@
     </queries>
 
     <application
+        android:name=".XrealApp"
         android:label="XREAL Space"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
