@@ -122,7 +122,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         var desktop = false
 
         /** desktop layout (many film / office sites are cramped in their mobile version) */
-        fun setDesktop(on: Boolean) {
+        fun applyDesktop(on: Boolean) {
             if (on == desktop || isMirror) return
             desktop = on
             web.settings.userAgentString = if (on) DESKTOP_UA else mobileUa
@@ -713,7 +713,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     fun setDesktopFocused(on: Boolean) {
         val p = panels.getOrNull(SpaceState.focusedPanel)
         if (p == null || p.isMirror) { SpaceState.notify("Bản máy tính", "Nhìn vào một màn web trước", Colors.AMBER, 2.5); return }
-        p.setDesktop(on)
+        p.applyDesktop(on)
         SpaceState.notify(if (on) "Bản máy tính" else "Bản điện thoại", "Đang tải lại trang", Colors.CYAN, 2.0)
     }
 
