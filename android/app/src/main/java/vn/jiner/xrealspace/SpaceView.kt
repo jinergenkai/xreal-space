@@ -602,7 +602,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     /** Place a view whose natural size is (vw x vh) so its centre lands on the projected point. */
     private fun layoutOn(v: View, pl: Placement, vw: Double, vh: Double) {
         if (!pl.visible) { hide(v); return }
-        eyeShift[v] = if (sbs) Stereo.shiftPx(pl.z, focalPx, convergeM = SpaceState.stereoConvergeM) else 0f
+        eyeShift[v] = if (sbs) Stereo.shiftPx(pl.depthM, focalPx, convergeM = SpaceState.stereoConvergeM) else 0f
         if (v.visibility != VISIBLE) v.visibility = VISIBLE
         val s = (pl.widthPx / vw).toFloat()
         v.scaleX = s; v.scaleY = s
