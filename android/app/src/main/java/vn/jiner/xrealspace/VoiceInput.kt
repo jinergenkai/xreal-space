@@ -53,6 +53,7 @@ class VoiceInput(private val ctx: Context, private val onCommandText: (String) -
     val modelReady get() = models.containsKey("vi")
 
     private fun dirFor(lang: String) = File(ctx.filesDir, MODELS.getValue(lang).first)
+    fun hasModel(lang: String) = downloaded(lang)
     private fun downloaded(lang: String) = dirFor(lang).let { File(it, "am").exists() || File(it, "conf").exists() }
     private fun statusFor(lang: String) = if (downloaded(lang)) "đã tải" else "chưa tải"
 

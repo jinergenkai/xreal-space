@@ -136,11 +136,19 @@ object Assistant : SpaceState.Controller {
     }
 
     /** "mở Zalo": launch the installed app and make sure the phone mirror shows it on the glasses. */
-    override fun launchApp(name: String) {
+    override fun launchApp(name: String, slot: Int?) {
         val pm = app.packageManager
         val apps = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
             .map { AppMatcher.App(it.loadLabel(pm).toString(), it.activityInfo.packageName) }
         val hit = AppMatcher.find(name, apps) ?: run { SpaceState.notify("Mở app", "Không tìm thấy \"$name\"", Colors.AMBER, 3.0); return }
+        // Shizuku ready: the app gets its own slot on the glasses (several apps at once)
+        if (AppDisplays.supported && AppDisplays.allowed) {
+            val st = SpaceState
+            val target = slot ?: st.freeSlot()
+            st.place(target, AppDisplays.PREFIX + hit.pkg, hit.label)
+            return
+        }
+        if (slot != null) SpaceState.notify("App trong ô", "Chưa bật được: ${AppDisplays.nextStep()} — tạm mở qua màn hình điện thoại", Colors.AMBER, 5.0)
         val launch = pm.getLaunchIntentForPackage(hit.pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) ?: return
         val go = {
             try { app.startActivity(launch); SpaceState.notify("Mở app", "${hit.label} → ô điện thoại", Colors.GREEN, 2.0) }

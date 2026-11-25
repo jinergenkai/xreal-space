@@ -598,4 +598,31 @@ class CoreTest {
         assertEquals(VoiceCommands.Cmd.Navigate("Chợ Lớn", "car"), P("chỉ đường tới Chợ Lớn"))      // "hướng dẫn" doesn't steal it
         assertEquals(VoiceCommands.Cmd.Media(MediaAction.PAUSE), P("dừng phim"))                  // not captions
     }
+
+    // ---------------------------------------------------------------- 0.10: health checks, updater
+    @Test fun healthBlockedFeaturesAndSummary() {
+        val items = listOf(
+            Health.Item(Health.Req.MIC, Health.Status.MISSING), Health.Item(Health.Req.LOCATION, Health.Status.OK),
+            Health.Item(Health.Req.TTS_VI, Health.Status.WARN), Health.Item(Health.Req.SHIZUKU, Health.Status.NA))
+        val b = Health.blocked(items)
+        assertEquals(Health.Req.MIC, b["Lệnh giọng nói"]); assertFalse(b.containsKey("Bản đồ thật + chỉ đường"))
+        assertTrue(Health.summary(items).startsWith("✗ Thiếu 1 mục"))
+        assertEquals("✓ Chạy được · 1 mục nên xem", Health.summary(items.filter { it.req != Health.Req.MIC }))
+        assertTrue(Health.why(Health.Req.MIC).contains("Cấp quyền Micro"))
+        assertEquals("✓", Health.mark(Health.Status.OK))
+    }
+
+    @Test fun updaterVersionCompare() {
+        assertTrue(Versions.newer("v0.10.0", "0.9.0", 10)); assertFalse(Versions.newer("v0.9.0", "0.9.0", 10))
+        assertTrue(Versions.newer("v0.9.1", "0.9.0", 10)); assertFalse(Versions.newer("v0.8.9", "0.9.0", 10))
+        assertTrue(Versions.newer("v0.10.0-12", "0.10.0", 11)); assertFalse(Versions.newer("v0.10.0-11", "0.10.0", 11))
+        assertEquals(listOf(1, 2, 3), Versions.parts("v1.2.3-45"))
+    }
+
+    @Test fun launchAppIntoSlot() {
+        assertEquals(VoiceCommands.Cmd.LaunchApp("zalo", 3), VoiceCommands.parse("mở app Zalo ô 3"))
+        assertEquals(VoiceCommands.Cmd.LaunchApp("excel", 2), VoiceCommands.parse("mở ứng dụng Excel ô số 2"))
+        assertEquals(VoiceCommands.Cmd.LaunchApp("zalo"), VoiceCommands.parse("mở Zalo"))                       // no slot: as before
+        assertEquals(VoiceCommands.Cmd.Place(3, "https://m.youtube.com", null), VoiceCommands.parse("YouTube ô 3"))  // website stays a website
+    }
 }

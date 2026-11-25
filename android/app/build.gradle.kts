@@ -11,8 +11,8 @@ android {
         applicationId = "vn.jiner.xrealspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.9.0"
+        versionCode = 11
+        versionName = "0.10.0"
     }
 
     // Release key comes from the environment (GitHub secrets on CI, see docs/WIKI.md "Phát hành").
@@ -40,6 +40,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    buildFeatures { aidl = true; buildConfig = true }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
@@ -47,5 +48,8 @@ dependencies {
     // Vosk: free offline speech recognition (Apache 2.0) — Vietnamese model downloaded at runtime
     implementation("com.alphacephei:vosk-android:0.3.75@aar")
     implementation("net.java.dev.jna:jna:5.18.1@aar")
+    // Shizuku: optional; lets the app run other Android apps in slots (virtual displays), no root needed
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     testImplementation("junit:junit:4.13.2")
 }

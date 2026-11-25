@@ -77,6 +77,7 @@ object PhoneNotifs {
     }
 
     fun read() {
+        if (NotifListener.instance == null) { HealthCheck.explain(vn.jiner.xrealspace.core.Health.Req.NOTIF_ACCESS); return }
         val list = feed.recent(6)
         SpaceState.showCard("Thông báo (${list.size})", NotifFeed.readout(list), 20.0)
         Speaker.say(if (list.isEmpty()) "Không có thông báo" else list.joinToString(". ") { Speech.notification(it) }, flush = true, force = true)

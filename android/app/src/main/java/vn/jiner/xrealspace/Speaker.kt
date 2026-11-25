@@ -49,6 +49,9 @@ object Speaker {
         }
     }
 
+    /** null = TTS engine not ready yet */
+    val vietnameseVoice: Boolean? get() = if (!ready) null else vietnamese
+
     val riding get() = SpaceState.speedLocked || Navigation.active
 
     /** Speak if the user's setting allows it right now. [force] = the user explicitly asked ("đọc thông báo"). */

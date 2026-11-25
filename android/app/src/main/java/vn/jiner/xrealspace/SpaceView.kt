@@ -140,12 +140,18 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         val docUri = DocView.uriOf(SpaceState.config.screens.getOrNull(index)?.url ?: "")
         var doc: DocView? = null
         var docImage: android.widget.ImageView? = null
+        /** a real Android app on its own virtual display ("app:<package>", needs Shizuku) */
+        val appPkg = SpaceState.config.screens.getOrNull(index)?.url?.takeIf { it.startsWith(AppDisplays.PREFIX) }?.removePrefix(AppDisplays.PREFIX)
+        var appDisplay = -1
+        var appView: TextureView? = null
+        /** mirror and app panels get input as gestures, not as WebView touch events */
+        val remoteInput get() = isMirror || appPkg != null
         val border = GradientDrawable().apply { setColor(Color.BLACK); setStroke(BORDER, Colors.BORDER); cornerRadius = 10f }
         /** content size in px (web: 1280x720; mirror: phone aspect, portrait) */
         val widthPx = if (isMirror) 720 else BASE_W
         var heightPx = if (isMirror) (720f * MirrorController.phoneH / MirrorController.phoneW).toInt() else BASE_W * 9 / 16
         /** the view that receives input: the WebView or the mirror */
-        val content: View get() = mirrorView ?: docImage ?: web
+        val content: View get() = mirrorView ?: appView ?: docImage ?: web
         var focused = false
             set(v) { if (v != field) { field = v; border.setStroke(BORDER, if (v) Colors.BORDER_FOCUS else Colors.BORDER) } }
         /** last time (ms) the panel was on screen, for pausing panels you are not looking at */
@@ -229,6 +235,32 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 }
                 mirrorView = tv
                 frame.addView(tv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            } else if (appPkg != null) {
+                val tv = TextureView(context)
+                val hint = TextView(context).apply {
+                    setTextColor(Colors.WHITE); textSize = 22f; gravity = Gravity.CENTER; setBackgroundColor(Color.BLACK)
+                    text = "${AppDisplays.label(appPkg)}\n\n${AppDisplays.nextStep() ?: "Đang mở…"}\n\n(mở mục Kiểm tra trong app để xem cách bật)"
+                }
+                var surface: Surface? = null
+                tv.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                        st.setDefaultBufferSize(AppDisplays.W, AppDisplays.H)
+                        val sf = Surface(st); surface = sf
+                        AppDisplays.attach(sf, appPkg) { id ->
+                            appDisplay = id
+                            if (id >= 0) hint.visibility = GONE
+                            else hint.text = "${AppDisplays.label(appPkg)}\n\n${AppDisplays.nextStep() ?: "Không mở được app trên màn hình ảo"}"
+                        }
+                    }
+                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
+                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+                        AppDisplays.release(appDisplay); appDisplay = -1; surface?.release(); surface = null; return true
+                    }
+                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                }
+                appView = tv
+                frame.addView(tv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                frame.addView(hint, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             } else if (docUri != null) {
                 if (DocView.isEpub(context, docUri)) {
                     frame.addView(web, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -336,6 +368,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         visibility = GONE
     }
     private var tutorialShown = -1
+    /** software brightness: black on top = darker (black is see-through on the glasses). Cheaper than view alpha. */
+    private val dimView = View(ctx).apply { setBackgroundColor(Color.BLACK); alpha = 0f; isClickable = false; isFocusable = false }
     private var lastFocus = -2
 
     private val captionView = TextView(ctx).apply {
@@ -379,6 +413,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         addView(info, LayoutParams(InfoView.W, InfoView.H))
         addView(toastView, LayoutParams(ToastView.W, ToastView.H)); toastView.visibility = GONE
         addView(tutorialView, LayoutParams(860, LayoutParams.WRAP_CONTENT))
+        addView(dimView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(status, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(wizardText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         slotLabels.forEach { addView(it, LayoutParams(220, 124)); it.pivotX = 0f; it.pivotY = 0f }
@@ -394,7 +429,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     }
 
     private fun rebuildPanels() {
-        panels.forEach { removeView(it.frame); it.doc?.close(); it.web.destroy() }
+        panels.forEach { removeView(it.frame); it.doc?.close(); AppDisplays.release(it.appDisplay); it.web.destroy() }
         panels.clear()
         SpaceState.config.screens.indices.forEach { i ->
             val p = Panel(i)
@@ -539,6 +574,8 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
             info.mode = when { st.walkMode -> "ĐI BỘ"; st.headLocked -> "HEAD-LOCKED"; else -> "WORLD-LOCKED" } +
                 if (onPhoneScreen) " · màn hình điện thoại" else ""
             info.extra = Utilities.infoLine()
+            val dim = if (onPhoneScreen) 0f else 1f - st.glassesBrightness
+            if (dimView.alpha != dim) { dimView.alpha = dim; dimView.visibility = if (dim > 0f) VISIBLE else GONE }
             info.refresh()
         }
         val t = st.toast
@@ -704,11 +741,18 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
                 val pt = gazeLocal(p) ?: return
                 touchTarget = p; touchX = pt[0]; touchY = pt[1]
                 touchDownTime = SystemClock.uptimeMillis()
-                if (!p.isMirror) send(p, MotionEvent.ACTION_DOWN, touchX, touchY)
+                if (!p.remoteInput) send(p, MotionEvent.ACTION_DOWN, touchX, touchY)
             }
-            MotionEvent.ACTION_MOVE -> fullTouch?.let { sendTo(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) } ?: touchTarget?.let { if (!it.isMirror) send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
+            MotionEvent.ACTION_MOVE -> fullTouch?.let { sendTo(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) } ?: touchTarget?.let { if (!it.remoteInput) send(it, MotionEvent.ACTION_MOVE, touchX + dxTotal * gain, touchY + dyTotal * gain) }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> fullTouch?.let { sendTo(it, action, touchX + dxTotal * gain, touchY + dyTotal * gain); fullTouch = null } ?: touchTarget?.let {
-                if (it.isMirror) {
+                if (it.appPkg != null) {
+                    // app on a virtual display: replay the finger as a tap / swipe in display pixels
+                    if (action == MotionEvent.ACTION_UP && it.appDisplay >= 0) {
+                        val c = it.content; val kx = AppDisplays.W / c.width.toFloat(); val ky = AppDisplays.H / c.height.toFloat()
+                        if (kotlin.math.hypot(dxTotal, dyTotal) < 20) AppDisplays.tap(it.appDisplay, touchX * kx, touchY * ky)
+                        else AppDisplays.swipe(it.appDisplay, touchX * kx, touchY * ky, (touchX + dxTotal * gain * 0.6f) * kx, (touchY + dyTotal * gain * 0.6f) * ky)
+                    }
+                } else if (it.isMirror) {
                     // mirrored phone app: replay the finger as one Accessibility gesture
                     val c = it.content; val cs = ControlService.instance
                     if (cs == null) SpaceState.notify("Điều khiển app", "Bật Trợ năng cho XREAL Space để bấm vào màn hình điện thoại", Colors.AMBER, 3.0)
@@ -744,6 +788,11 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
         }
         val p = panels.getOrNull(SpaceState.focusedPanel) ?: return false
         val pt = gazeLocal(p) ?: return false
+        if (p.appPkg != null) {
+            if (p.appDisplay < 0) { SpaceState.notify("App trong ô", AppDisplays.nextStep() ?: "Chưa mở được", Colors.AMBER, 3.0); return false }
+            AppDisplays.tap(p.appDisplay, pt[0] * AppDisplays.W / p.content.width, pt[1] * AppDisplays.H / p.content.height)
+            return true
+        }
         if (p.isMirror) {
             val cs = ControlService.instance ?: run { SpaceState.notify("Điều khiển app", "Bật Trợ năng cho XREAL Space", Colors.AMBER, 3.0); return false }
             return cs.tapMirror(pt[0], pt[1], p.content.width.toFloat(), p.content.height.toFloat())
@@ -757,6 +806,7 @@ class SpaceView(ctx: Context, private val onPhoneScreen: Boolean) : FrameLayout(
     /** Two-finger swipe left: leave fullscreen, else go back in the page you look at. */
     fun back() {
         if (fullView != null) { exitFullscreen(); return }
+        panels.getOrNull(SpaceState.focusedPanel)?.takeIf { it.appDisplay >= 0 }?.let { AppDisplays.key(it.appDisplay, 4); return }   // KEYCODE_BACK
         focusedDoc()?.let { it.step(-1); docHint(it); return }
         focusedWeb()?.let { if (it.canGoBack()) it.goBack() }
     }

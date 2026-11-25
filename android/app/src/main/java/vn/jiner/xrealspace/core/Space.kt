@@ -264,6 +264,9 @@ object VoiceCommands {
         /** real GPS navigation; profile "car" | "bike" | "foot" */
         data class Navigate(val dest: String, val profile: String = "car") : Cmd()
         object StopNav : Cmd()
+        /** software brightness of the glasses image, ±0.1 steps */
+        data class Brightness(val delta: Float) : Cmd()
+        object GlassesInfo : Cmd()
         /** play / pause / next… on the video you're watching, else on the phone's music app; seek in seconds */
         data class Media(val action: MediaAction, val seconds: Int = 0) : Cmd()
         /** read things out loud (TTS): on / off / only while riding */
@@ -282,7 +285,8 @@ object VoiceCommands {
         data class Workspace(val name: String) : Cmd()
         data class Follow(val mode: FollowMode) : Cmd()
         /** open an installed Android app by name (shown on the glasses through the phone mirror) */
-        data class LaunchApp(val name: String) : Cmd()
+        /** open an installed Android app; with Shizuku it goes into [slot] (or a free one) on the glasses */
+        data class LaunchApp(val name: String, val slot: Int? = null) : Cmd()
         /** phone screen mirror into a grid slot (null = keep / default 4), off = stop */
         data class Mirror(val slot: Int?) : Cmd()
         object MirrorOff : Cmd()
@@ -418,6 +422,11 @@ object VoiceCommands {
         if (has("bo qua huong dan", "tat huong dan", "skip tutorial")) return Cmd.TutorialCmd(false)
         if (has("huong dan su dung", "xem huong dan", "huong dan", "tutorial")) return Cmd.TutorialCmd(true)
 
+        // glasses (replaces Nebula's settings)
+        if (has("sang hon", "tang do sang", "sang len", "brighter")) return Cmd.Brightness(0.1f)
+        if (has("toi hon", "giam do sang", "dim", "darker")) return Cmd.Brightness(-0.1f)
+        if (has("cai dat kinh", "thong tin kinh", "glasses settings", "glasses info")) return Cmd.GlassesInfo
+
         // speaking out loud
         if (has("tat doc to", "tat giong doc", "dung doc to", "speech off")) return Cmd.Speak(SpeakMode.OFF)
         if (has("doc to khi di", "chi doc khi di xe")) return Cmd.Speak(SpeakMode.RIDING)
@@ -491,6 +500,12 @@ object VoiceCommands {
         if (has("man hinh chinh", "go home", "ve home")) return Cmd.Home
         // slots
         if (slot != null && has("xoa", "dong", "tat", "bo", "clear", "close", "remove")) return Cmd.ClearSlot(slot)
+        // "mở app Zalo ô 3" / "ứng dụng Excel ô 2": an Android app into a slot (needs the word app / ứng dụng,
+        // otherwise "YouTube ô 3" keeps meaning the website)
+        if (slot != null && has("app", "ung dung", "ap")) {
+            val name = appName(t).replace(Regex("""\s+(?:o so|o|slot|man so|man)\s+\S+$"""), "").trim()
+            if (name.isNotBlank()) return Cmd.LaunchApp(name, slot)
+        }
         if (slot != null) {
             val site = siteFromText(t)
             if (site != null) return Cmd.Place(slot, site, null)

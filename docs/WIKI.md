@@ -1,6 +1,6 @@
 # XREAL Space — Wiki & danh sách tính năng
 
-Cập nhật: 25/11/2026 · bản 0.9.0
+Cập nhật: 25/11/2026 · bản 0.10.0
 Đây là wiki duy nhất của dự án (không còn bản online). Mọi thay đổi ghi vào file này.
 
 ## 1. Tổng quan
@@ -82,6 +82,10 @@ Trạng thái: **PC ✓** = đã chạy trên kính thật ở prototype PC · *
 | Phim web | Chặn quảng cáo (danh sách tên miền), chặn cửa sổ bật lên và chuyển trang lạ không do bấm | Chờ test | 0.7 |
 | Phim web | Bản máy tính / bản điện thoại cho trang đang nhìn; tự nhớ chỗ đang xem và xem tiếp | Chờ test | 0.7 |
 | 3D | Kính ở chế độ SBS (giữ Độ sáng+): mỗi mắt một hình, màn hình gần thì nổi ra; phim 3D SBS trải đủ hai mắt; chỉnh độ nổi | Chờ test (thử nghiệm) | 0.7 |
+| Kiểm tra | Màn **Kiểm tra hệ thống**: từng yêu cầu ✓/⚠/✗, dùng cho tính năng nào, nút Sửa; danh sách tính năng chưa dùng được và vì sao; tính năng lỗi trên kính nói rõ thiếu gì | Chờ test | 0.10 |
+| App trong ô | **Nhiều app Android cùng lúc**, mỗi app một ô (màn hình ảo qua Shizuku, Android 13+); "mở app Zalo ô 3"; bấm/kéo/quay lại qua touchpad | Chờ test (thử nghiệm) | 0.10 |
+| Kính | Thay phần cài đặt của Nebula: độ sáng (phần mềm), tần số quét (chọn trong các mức kính báo cho Android), thông tin 2D/3D; "sáng hơn" / "tối hơn" | Chờ test | 0.10 |
+| Cập nhật | Tự kiểm tra bản mới, tải và cài trong app (repo public chứa APK) | Chờ cấu hình | 0.10 |
 | Phụ đề phim | Phụ đề / dịch từ **tiếng của phim đang phát** (không qua micro): video trên kính hoặc app trên điện thoại (Android 10+, app không chặn thu) | Chờ test | 0.9 |
 | Tài liệu | Đọc PDF (PdfRenderer) và EPUB trên kính; nền tối; lật bằng vuốt 2 ngón / "trang sau" / "trang 12"; nhớ trang | Chờ test | 0.9 |
 | Tiện ích | Thanh dưới đồng hồ: thời tiết · hẹn giờ · lịch sắp tới; nhắc lịch trước 10 phút; Pomodoro; "ghi chú …" bằng giọng, chia sẻ ghi chú | Chờ test | 0.9 |
@@ -150,6 +154,20 @@ Trang tự nhớ chỗ đang xem; mở lại là xem tiếp (chỉ với video n
 
 **3D (0.7, thử nghiệm):** giữ nút **Độ sáng +** trên kính ~2 giây → kính chuyển 3840×1080 (SBS), app tự nhận và vẽ mỗi mắt một hình: các màn ở gần nổi ra trước.
 Phim 3D SBS: bật toàn màn hình là trải đủ hai mắt. Phim thường: giữ nút lần nữa để về 2D. Mỏi mắt → "Độ nổi +" (giảm độ nổi) hoặc tắt 3D trong app.
+
+**Kiểm tra hệ thống (0.10):** nút 🩺 ở đầu app. Mỗi mục có ✓ (ổn), ⚠ (nên xem / tuỳ chọn), ✗ (thiếu → tính năng hỏng) và nút **Sửa** mở đúng chỗ cần cấp.
+Phần "Chưa dùng được" liệt kê tính năng nào đang hỏng vì thiếu gì. Khi đang đeo kính mà một tính năng lỗi vì thiếu quyền, kính hiện "Cần: … — cách sửa".
+
+**Nhiều app Android trong ô (0.10, thử nghiệm):** cần Android 13+ và app **Shizuku** (miễn phí, không cần root):
+1. Cài Shizuku từ Play Store → mở → "Khởi động qua Gỡ lỗi không dây" (lần đầu phải bật Tuỳ chọn nhà phát triển → Gỡ lỗi không dây; làm theo hướng dẫn trong Shizuku).
+2. Mở XREAL Space → 🩺 Kiểm tra → mục Shizuku → Sửa → Cho phép.
+3. Nói "mở app Zalo ô 3", "mở ứng dụng Excel ô 2", hoặc "mở Zalo" (vào ô trống). Mỗi app chạy trên một màn hình ảo riêng, vẽ vào ô đó.
+Điều khiển: chấm giữa tầm nhìn + chạm touchpad = bấm; kéo = vuốt; vuốt 2 ngón trái = quay lại. Gõ chữ: bàn phím hiện trên màn hình điện thoại.
+Giới hạn: khởi động lại máy phải bật lại Shizuku; một số app không chạy trên màn hình ảo; app DRM ra màn đen; máy yếu nên ≤ 3 app.
+
+**Kính (0.10):** mục "Kính" trong app: độ sáng ☀ −/+ (làm tối hình bằng phần mềm), "Tần số quét" (đổi giữa các mức kính báo cho Android, vd 60/72 Hz), thông tin chế độ 2D/3D.
+Nói "sáng hơn", "tối hơn", "cài đặt kính". Chuyển 2D/3D vẫn bằng nút cứng (giữ Độ sáng + ~2 giây).
+Chưa làm: chỉnh độ sáng phần cứng / chuyển 3D bằng lệnh USB — chờ xác minh giao thức (không gửi lệnh đoán mò xuống kính).
 
 **Phụ đề phim (0.9):** nói "phụ đề phim" (giữ nguyên tiếng) hoặc "dịch phim" (Anh → Việt, cần LLM), hoặc nút 🎬 trong mục Phụ đề.
 Lần đầu điện thoại hỏi quyền ghi màn hình: chọn Cho phép (Android dùng chung quyền này để thu âm thanh đang phát). Cần Android 10+.
@@ -281,6 +299,10 @@ MainActivity ◄── TouchpadView (cử chỉ) · bàn phím · nút âm lư�
 - [ ] Bản đồ: ra ngoài trời → ô bản đồ hiện bản đồ thật, mũi tên theo hướng đi; "chỉ đường tới <chỗ gần>" → đường xanh, báo rẽ trước ~150 m, đi lệch → tìm đường mới
 - [ ] Phim: mở 1 trang phim nhiều quảng cáo → ít pop-up / chuyển trang; xem 5 phút, đóng, mở lại → "Xem tiếp từ …"; "bản máy tính" đổi giao diện
 - [ ] 3D: giữ Độ sáng+ 2 giây → app báo "Chế độ 3D", màn hình có chiều sâu, không bị nhân đôi/lệch khó chịu; mở video 3D SBS toàn màn → nổi khối. Nếu mắt nhòe/lệch: thử Độ nổi ±, ghi lại giá trị dễ chịu
+- [ ] 🩺 Kiểm tra: thu hồi Micro trong Cài đặt → mục Micro ✗, "Chưa dùng được" có Lệnh giọng nói; bấm Sửa → cấp → ✓
+- [ ] Shizuku: cài + bật → Kiểm tra mục Shizuku ✓ → "mở app Zalo ô 3" hiện Zalo trong ô 3; bấm/vuốt/quay lại được; mở thêm 1 app ô 7 → 2 app chạy cùng lúc
+- [ ] Kính: ☀ −/+ đổi độ sáng; "Tần số quét" xem kính báo những mức nào; ghi lại vào wiki
+- [ ] Cập nhật: sau khi có RELEASES_TOKEN, tăng version + push → app báo có bản mới → Cập nhật → cài đè thành công
 - [ ] Hướng dẫn: lần đầu lên kính → hiện bước 1/5; làm đúng từng bước → qua; "bỏ qua hướng dẫn" tắt được
 - [ ] Phụ đề phim: mở video YouTube tiếng Anh trên kính → "dịch phim" → cho phép ghi màn hình → phụ đề theo tiếng phim (không lẫn tiếng người nói trong phòng)
 - [ ] Tài liệu: mở 1 PDF và 1 EPUB; lật trang bằng vuốt và giọng; đóng app mở lại → "Đọc tiếp" đúng chỗ
@@ -336,6 +358,16 @@ Không có kính: **Dùng cảm biến ĐT** → **Xem trên màn hình này**, 
 | Kính chỉ 3DoF, không camera | Không bám vật thật, không nhận tay | Giới hạn phần cứng Air 2 |
 | Nóng & pin | Xuất hình + nhiều WebView + mic liên tục tốn pin nhanh | Cần đo khi test (mục 7) |
 
+### Tự cập nhật trong app (0.10)
+
+App kiểm tra bản mới ở repo **public** `jinergenkai/xreal-space-releases` (chỉ chứa file APK; code vẫn private). Cần làm **một lần**:
+1. Làm xong mục "Phát hành APK (khoá ký)" bên dưới (cập nhật chỉ cài đè được khi cùng khoá ký).
+2. Tạo repo public trống `xreal-space-releases` trên GitHub.
+3. GitHub → Settings → Developer settings → Fine-grained tokens → token chỉ cho repo `xreal-space-releases`, quyền **Contents: Read and write**.
+4. Repo `xreal-space` → Settings → Secrets → Actions → thêm `RELEASES_TOKEN` = token vừa tạo.
+Từ đó mỗi lần tăng `versionCode` và push, CI đăng bản mới; app hiện "⬆ Có bản mới" và nút Cập nhật (Android hỏi xác nhận cài).
+Người dùng cài bản debug / bản ký khác trước đó: phải gỡ app 1 lần rồi cài bản release.
+
 ### Phát hành APK (khoá ký)
 
 GitHub Actions build 2 file mỗi lần push: `xreal-space-debug-apk` (để test) và `xreal-space-release-apk` (gọn hơn, để gửi người khác cài).
@@ -355,6 +387,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 | 3 | Chưa chạy trên máy thật nào (điện thoại, Beam, Beam Pro) | Cao | Còn — làm theo mục 7 |
 | 4 | API key Jev / LLM lưu thường trong máy (SharedPreferences), chưa mã hoá | Trung bình | Còn — chuyển sang backend giữ key (mục 10) |
 | 5 | Cho phép HTTP không mã hoá (`usesCleartextTraffic`) để dùng Ollama trong mạng nhà | Trung bình | Còn — giới hạn bằng network-security-config chỉ cho IP nội bộ |
+| 13 | Lệnh USB điều khiển kính (độ sáng phần cứng, chuyển 3D) chưa có: giao thức chưa xác minh | Thấp | Còn — cần đọc mã driver mở (GitLab nrealAirLinuxDriver) rồi test trên kính |
 | 6 | Điều khiển từ xa qua Wi-Fi chưa có mã ghép đôi / mật khẩu | Trung bình | **Đã trả (0.5.1)**: mã 4 số, khoá 60 s sau 5 lần sai. Còn lại: dữ liệu chưa mã hoá (chỉ dùng trong Wi-Fi tin cậy) |
 | 7 | Đăng nhập Google trong WebView | Trung bình | Đã giảm (0.5): đổi UA + mở Chrome; chưa chắc hết |
 | 8 | Chưa có hướng dẫn lần đầu | Thấp | **Đã trả (0.5)**: thẻ Thiết lập lần đầu |
@@ -397,6 +430,7 @@ Chưa có secret thì bản release ký tạm bằng khoá debug (vẫn cài đ�
 
 | Ngày | Bản | Thay đổi |
 | --- | --- | --- |
+| 25/11/2026 | 0.10.0 | Màn Kiểm tra hệ thống + báo thiếu gì khi tính năng lỗi; nhiều app Android trong ô (Shizuku, thử nghiệm); cài đặt kính (độ sáng, tần số quét, 2D/3D); tự cập nhật qua repo releases |
 | 25/11/2026 | 0.9.0 | Phụ đề/dịch từ tiếng phim đang phát; đọc PDF/EPUB trên kính; thanh tiện ích (thời tiết, hẹn giờ/Pomodoro, lịch + nhắc, ghi chú giọng); hướng dẫn 5 bước lần đầu |
 | 25/11/2026 | 0.8.0 | Đọc to thông báo + chỉ đường (TTS tiếng Việt), điều khiển phát bằng giọng (video trên kính / app nhạc điện thoại), APK release (R8) + script tạo khoá ký |
 | 25/11/2026 | 0.7.0 | Bản đồ GPS thật (OSM) + chỉ đường bằng giọng; xem phim web: chặn quảng cáo/pop-up/chuyển trang, bản máy tính, xem tiếp; 3D SBS: chiều sâu cho màn hình và phim 3D |

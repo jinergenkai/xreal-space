@@ -48,6 +48,9 @@ object Navigation {
     fun start(query: String, profile: String) {
         val st = SpaceState
         val here = Sensors.location
+        if (Sensors.app().checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            HealthCheck.explain(vn.jiner.xrealspace.core.Health.Req.LOCATION); return
+        }
         Sensors.startSpeed()                                    // make sure GPS is on even without glasses
         if (here == null) st.notify("Chỉ đường", "Đang chờ GPS… (cấp quyền Vị trí, ra chỗ thoáng)", Colors.AMBER, 4.0)
         st.notify("Chỉ đường", "Đang tìm \"$query\"…", Colors.CYAN, 4.0)

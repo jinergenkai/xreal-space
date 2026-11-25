@@ -51,10 +51,11 @@ class SpacePresentation(ctx: Context, display: Display) : Presentation(ctx, disp
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         space = SpaceView(context, onPhoneScreen = false)
         setContentView(space)
+        GlassesDisplay.attach(window, display)
     }
 
     override fun onStart() { super.onStart(); space.start(); SpaceState.glassesActive = true }
-    override fun onStop() { space.stop(); SpaceState.glassesActive = false; super.onStop() }
+    override fun onStop() { space.stop(); SpaceState.glassesActive = false; GlassesDisplay.detach(window); super.onStop() }
 }
 
 class MainActivity : Activity(), TouchpadView.Host {
@@ -119,6 +120,7 @@ class MainActivity : Activity(), TouchpadView.Host {
         Assistant.docPicker = { pickDoc() }
         buildUi()
         setupRemote()
+        Updater.check(this) { refreshSetup() }
         dm.registerDisplayListener(displayListener, ui)
         SpaceState.log("App start. Android ${android.os.Build.VERSION.RELEASE} / ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         connectGlasses()
@@ -315,7 +317,12 @@ class MainActivity : Activity(), TouchpadView.Host {
         fun mark(ok: Boolean) = if (ok) "✓" else "✗"
         val notif = android.os.Build.VERSION.SDK_INT < 33 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
         val battery = pm.isIgnoringBatteryOptimizations(packageName)
+        val items = HealthCheck.collect(this)
         t.text = buildString {
+            append(vn.jiner.xrealspace.core.Health.summary(items)).append("\n")
+            vn.jiner.xrealspace.core.Health.blocked(items).entries.take(3).forEach { (f, r) -> append("  ✗ $f — thiếu ${r.title}\n") }
+            if (Updater.updateAvailable) append("  ⬆ ${Updater.status}\n")
+            append("\n")
             append("${mark(usb.connected)} Kính đã nối (cắm kính, bấm Cho phép khi Android hỏi USB)\n")
             append("${mark(hasMic())} Micro — lệnh giọng nói, phụ đề, nhắc chữ\n")
             append("${mark(GlassesService.canHost(this@MainActivity))} Hiện trên app khác — kính vẫn chạy khi mở Zalo/Netflix\n")
@@ -578,7 +585,9 @@ class MainActivity : Activity(), TouchpadView.Host {
         statusText = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f; typeface = Typeface.MONOSPACE; setPadding(0, dp(8), 0, dp(4)) }
         col.addView(statusText)
 
-        col.addView(label("Thiết lập lần đầu"))
+        col.addView(label("Thiết lập & kiểm tra"))
+        col.addView(row(btn("🩺 Kiểm tra hệ thống") { startActivity(Intent(this, HealthActivity::class.java)) },
+            btn("⬆ Cập nhật") { if (Updater.updateAvailable) Updater.downloadAndInstall(this) else Updater.check(this, quiet = false) { refreshSetup() } }))
         setupText = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f; setPadding(0, 0, 0, dp(4)) }
         col.addView(setupText)
         col.addView(row(btn("Micro") { withMic { refreshSetup() } }, btn("Hiện trên app khác") { openOverlaySettings() },
@@ -668,6 +677,16 @@ class MainActivity : Activity(), TouchpadView.Host {
             hideKeyboard(); Navigation.start(q, profile)
         }
         col.addView(row(btn("🏍 Xe") { go("car") }, btn("🚲 Đạp") { go("bike") }, btn("🚶 Đi bộ") { go("foot") }, btn("Dừng") { Navigation.stop() }))
+
+        col.addView(label("Kính (thay phần cài đặt của Nebula)"))
+        val glassesInfo = TextView(this).apply { setTextColor(0xFFCFD8DC.toInt()); textSize = 12.5f }
+        col.addView(glassesInfo)
+        fun refreshGlassesInfo() { glassesInfo.text = GlassesDisplay.describe() }
+        col.addView(row(btn("☀ −") { SpaceState.setBrightness(SpaceState.glassesBrightness - 0.1f); refreshGlassesInfo() },
+            btn("☀ +") { SpaceState.setBrightness(SpaceState.glassesBrightness + 0.1f); refreshGlassesInfo() },
+            btn("Tần số quét") { SpaceState.notify("Tần số quét", GlassesDisplay.cycleRefresh(), Colors.CYAN, 2.0); refreshGlassesInfo() },
+            btn("Thông tin") { refreshGlassesInfo() }))
+        refreshGlassesInfo()
 
         col.addView(label("Tài liệu & tiện ích"))
         col.addView(row(btn("📖 Mở PDF/EPUB") { pickDoc() },

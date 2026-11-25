@@ -82,6 +82,10 @@ object SpaceState {
     var rideSafety = true
     /** film sites: block ad hosts, pop-up windows and redirects to other sites (default on) */
     var adBlock = true
+    /** software brightness of everything drawn on the glasses (0.2 … 1.0) */
+    var glassesBrightness = 1.0f
+    /** preferred refresh rate in Hz for the glasses window (0 = Android decides) */
+    var glassesModeHz = 0
     /** PDF pages shown inverted (light text on black) — easier on the glasses */
     var darkDocs = true
     /** read notifications / turns out loud: off, only while riding or navigating, always */
@@ -105,7 +109,7 @@ object SpaceState {
     interface Controller {
         fun ask(question: String)
         fun summarizeFocused()
-        fun launchApp(name: String)
+        fun launchApp(name: String, slot: Int? = null)
         fun mirror(slot: Int?, then: (() -> Unit)? = null)
         fun mirrorOff()
         fun phoneBack(): Boolean
@@ -157,6 +161,7 @@ object SpaceState {
         prefsCtx = ctx.applicationContext
         CrashLog.install(ctx)
         DocPositions.init(ctx)
+        AppDisplays.init(ctx)
         Utilities.init(ctx)
         Speaker.init(ctx)
         config = load(ctx)
@@ -284,14 +289,25 @@ object SpaceState {
     }
 
     /** Put a page into grid slot 1..9 (replaces whatever is there). */
+    /** first empty slot, centre first, then left/right, up/down, corners */
+    fun setBrightness(v: Float) {
+        glassesBrightness = v.coerceIn(0.2f, 1f); saveSettings()
+        notify("Độ sáng", "${(glassesBrightness * 100).toInt()}% (phần mềm)", Colors.CYAN, 1.5)
+    }
+
+    fun freeSlot(): Int {
+        val used = config.screens.map { SlotGrid.slotOf(it) }.toSet()
+        return listOf(5, 4, 6, 2, 8, 1, 3, 7, 9).firstOrNull { it !in used } ?: 5
+    }
+
     fun place(slot: Int, url: String, title: String?) {
         if (slot !in 1..9) return
         val u = normalizeUrl(url)
         val name = title?.takeIf { it.isNotBlank() }?.take(24) ?: hostOf(u)
         val existing = config.screens.indexOfFirst { SlotGrid.slotOf(it) == slot }
         // web <-> phone mirror is a different kind of panel: rebuild instead of just loading a URL
-        fun kind(x: String) = when { x.startsWith("mirror:") -> 1; x.startsWith("doc:") -> 2; else -> 0 }
-        if (existing >= 0 && (kind(config.screens[existing].url) != kind(u) || kind(u) == 2)) {
+        fun kind(x: String) = when { x.startsWith("mirror:") -> 1; x.startsWith("doc:") -> 2; x.startsWith("app:") -> 3; else -> 0 }
+        if (existing >= 0 && (kind(config.screens[existing].url) != kind(u) || kind(u) >= 2)) {
             config.screens.removeAt(existing)
             config.screens.add(SlotGrid.spec(slot, name, u).also { if (u.startsWith("mirror:")) it.widthM = 0.5 })
             panelsVersion++; save(); showGrid(3.0); notify("Ô $slot", name, Colors.GREEN, 2.0); return
@@ -385,6 +401,8 @@ object SpaceState {
             VoiceCommands.Cmd.ReadNotes -> Utilities.showNotes()
             VoiceCommands.Cmd.Agenda -> Utilities.showAgenda()
             VoiceCommands.Cmd.WeatherNow -> Utilities.showWeather()
+            is VoiceCommands.Cmd.Brightness -> setBrightness(glassesBrightness + cmd.delta)
+            VoiceCommands.Cmd.GlassesInfo -> showCard("Kính", GlassesDisplay.describe(), 12.0)
             is VoiceCommands.Cmd.TutorialCmd -> if (cmd.start) startTutorial() else skipTutorial()
             is VoiceCommands.Cmd.DocPage -> if (SpaceHost.space?.docPage(cmd.step, cmd.page) != true) notify("Tài liệu", "Chưa mở tài liệu nào — nói \"mở tài liệu\"", Colors.AMBER, 3.0)
             is VoiceCommands.Cmd.Speak -> setSpeak(cmd.mode)
@@ -397,7 +415,7 @@ object SpaceState {
             VoiceCommands.Cmd.ShowGrid -> showGrid(8.0)
             is VoiceCommands.Cmd.Workspace -> setWorkspace(cmd.name)
             is VoiceCommands.Cmd.Follow -> setFollow(cmd.mode)
-            is VoiceCommands.Cmd.LaunchApp -> controller?.launchApp(cmd.name)
+            is VoiceCommands.Cmd.LaunchApp -> controller?.launchApp(cmd.name, cmd.slot)
             is VoiceCommands.Cmd.Mirror -> controller?.mirror(cmd.slot)
             VoiceCommands.Cmd.MirrorOff -> controller?.mirrorOff()
             is VoiceCommands.Cmd.Captions -> controller?.setCaptions(cmd.mode, cmd.media)
@@ -426,7 +444,7 @@ object SpaceState {
 
     fun normalizeUrl(s: String): String {
         val t = s.trim()
-        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:") || t.startsWith("mirror:") || t.startsWith("doc:")) return t
+        if (t.startsWith("http://") || t.startsWith("https://") || t.startsWith("file:") || t.startsWith("about:") || t.startsWith("mirror:") || t.startsWith("doc:") || t.startsWith("app:")) return t
         if (t.contains('.') && !t.contains(' ')) return "https://$t"
         return VoiceCommands.searchUrl(t)
     }
@@ -458,6 +476,7 @@ object SpaceState {
             .put("intentEngine", intentEngine.name).put("sttEngine", sttEngine.name)
             .put("rideSafety", rideSafety)
             .put("tutorialDone", tutorialDone)
+            .put("glassesBrightness", glassesBrightness.toDouble()).put("glassesModeHz", glassesModeHz)
             .put("adBlock", adBlock).put("darkDocs", darkDocs).put("speakMode", speakMode.name)
             .put("stereo3d", stereo3d).put("stereoConvergeM", stereoConvergeM)
             .put("resume", org.json.JSONObject().apply { resume.entries().forEach { (k, v) -> put(k, v) } })
@@ -481,6 +500,7 @@ object SpaceState {
             wakeEnabled = o.optBoolean("wakeEnabled", wakeEnabled)
             rideSafety = o.optBoolean("rideSafety", rideSafety)
             tutorialDone = o.optBoolean("tutorialDone", tutorialDone)
+            glassesBrightness = o.optDouble("glassesBrightness", 1.0).toFloat().coerceIn(0.2f, 1f); glassesModeHz = o.optInt("glassesModeHz", 0)
             adBlock = o.optBoolean("adBlock", adBlock); darkDocs = o.optBoolean("darkDocs", darkDocs)
             speakMode = runCatching { vn.jiner.xrealspace.core.SpeakMode.valueOf(o.optString("speakMode", speakMode.name)) }.getOrDefault(speakMode)
             stereo3d = o.optBoolean("stereo3d", stereo3d); stereoConvergeM = o.optDouble("stereoConvergeM", stereoConvergeM)

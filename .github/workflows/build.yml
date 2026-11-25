@@ -29,6 +29,20 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      # Publish the signed release APK to the PUBLIC releases repo so phones can self-update.
+      # Needs: release key secrets (same signature for every update) + RELEASES_TOKEN (fine-grained PAT, Contents: write
+      # on jinergenkai/xreal-space-releases). Without them this step does nothing.
+      - name: Publish update
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ] || [ -z "$ANDROID_KEYSTORE_PATH" ]; then echo "skip: RELEASES_TOKEN or release key not set"; exit 0; fi
+          VN=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts); VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          TAG="v$VN-$VC"
+          if gh release view "$TAG" --repo jinergenkai/xreal-space-releases >/dev/null 2>&1; then echo "$TAG already published"; exit 0; fi
+          cp app/build/outputs/apk/release/app-release.apk "xreal-space-$VN.apk"
+          gh release create "$TAG" "xreal-space-$VN.apk" --repo jinergenkai/xreal-space-releases --title "XREAL Space $VN" --notes "Bản $VN (build $VC). Xem nhật ký trong wiki."
       - uses: actions/upload-artifact@v4
         with:
           name: xreal-space-release-apk

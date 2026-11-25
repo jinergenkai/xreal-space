@@ -11,3 +11,7 @@
 -keepclassmembers class * extends com.sun.jna.** { public *; }
 -dontwarn java.awt.**
 -dontwarn com.sun.jna.**
+
+# Shizuku user service is created by class name in another process
+-keep class rikka.shizuku.** { *; }
+-keep class moe.shizuku.** { *; }

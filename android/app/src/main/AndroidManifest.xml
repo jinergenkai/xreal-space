@@ -14,6 +14,8 @@
     <!-- today's events + reminder on the glasses (read only) -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- in-app updates from the public releases repo (the user confirms each install) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -75,6 +77,18 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
         </service>
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
+        <activity android:name=".HealthActivity" android:exported="false" android:label="Kiểm tra hệ thống" />
+
+        <!-- Shizuku hands us its binder through this provider (optional feature: Android apps in slots) -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <!-- phone notifications on the glasses (user enables "Notification access" once) -->
         <service
             android:name=".NotifListener"
